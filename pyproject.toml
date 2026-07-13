@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pbc-agent"
+version = "0.1.0"
+description = "Audit PBC (Prepared-By-Client) tracking agent: verifies client deliveries against acceptance criteria."
+requires-python = ">=3.11"
+# Phase 1 (ingest + recursion) runs on the standard library alone.
+# The dependencies below are layered in from Phase 2 onward.
+dependencies = []
+
+[project.optional-dependencies]
+parse = [
+    "pdfplumber>=0.11",     # native PDF text + tables
+    "pypdf>=4.0",           # PDF metadata / fallback
+    "openpyxl>=3.1",        # XLSX incl. hidden sheets, formulas + cached values
+    "pillow>=10.0",         # JPG handling / deskew
+    "pytesseract>=0.3",     # OCR (requires system tesseract)
+]
+llm = [
+    "anthropic>=0.40",      # default judgment/match provider
+    "rank-bm25>=0.2",       # cheap keyword candidate generation
+]
+model = [
+    "pydantic>=2.6",        # schema validation for LLM structured outputs
+]
+report = [
+    "jinja2>=3.1",          # HTML reviewer dashboard
+]
+pii = [
+    "presidio-analyzer>=2.2",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+pbc = "pbc_agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pbc_agent*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
