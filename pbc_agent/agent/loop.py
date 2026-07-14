@@ -21,8 +21,14 @@ from pbc_agent.config.engagement import load_engagement
 from pbc_agent.criteria_loader.pbc_list import load_pbc_list
 from pbc_agent.ingest import assemble_threads, extract_documents, load_mailbox
 from pbc_agent.llm.provider import Provider, get_provider
+from pbc_agent.model.assessment import Status
 from pbc_agent.model.documents import SourceType
 from pbc_agent.state.store import TrackerState
+
+
+def _is_config_doc(filename: str) -> bool:
+    low = filename.lower()
+    return "pbc_list" in low or "client_profile" in low or low == "(email body)"
 
 _MAX_STEPS = 8
 _CONTENT_LEAVES = {SourceType.PDF_NATIVE, SourceType.PDF_SCANNED, SourceType.XLSX,
@@ -34,8 +40,14 @@ to do and call tools to do it: parse attachments, extract citation-backed facts,
 PBC list items, and verify each item's acceptance criteria before setting its status. Never \
 trust a filename — verify from content. A document that is the wrong period, missing an entity, \
 unsigned when a signature is required, or short of the requested sample is NOT complete. If an \
-email only reschedules an item, record the new date (do not flag it late). Keep going until the \
-tracker reflects this email, then call finish. Be economical with tool calls."""
+email only reschedules an item, record the new date (do not flag it late).
+
+CRITICAL: if an email carries attachments that are actual client deliverables, you MUST call \
+verify_item for the PBC item each one satisfies BEFORE you call finish — parsing or matching a \
+document is not enough; an unverified delivery is a dropped item. Use match_item for candidates \
+but choose the correct item_id yourself. The PBC list PDF and client-profile are context, not \
+deliverables. Keep going until every delivered document in this email has been verified, then \
+call finish. Be economical with tool calls."""
 
 
 class AgentRunner:
@@ -90,9 +102,54 @@ class AgentRunner:
             if self.state.budget.exhausted:
                 break
             self._process_email(message)
+        # Deterministic completeness backstop: never let a delivered document go unassessed,
+        # even if the agent finished an email without verifying it.
+        self._completeness_sweep()
         # Final step: draft grouped follow-ups for everything still open.
         self._final_followups()
         return self.state
+
+    def _completeness_sweep(self) -> None:
+        """Assess any delivered content document not already assigned to an item.
+
+        The agent drives per-email reasoning; this guarantees coverage. Only unassigned,
+        real attachment content is swept — the PBC list / client profile and email bodies are
+        skipped. Uses the same deterministic match + verify tools, tagged as a sweep in the trace.
+        """
+        assigned = {d for ids in self.state.evidence_by_item.values() for d in ids}
+        swept = []
+        for doc in list(self.toolbox.documents.values()):
+            if doc.sniffed_type not in _CONTENT_LEAVES or doc.sniffed_type is SourceType.EMAIL_BODY:
+                continue
+            if doc.doc_id in assigned or _is_config_doc(doc.filename):
+                continue
+            from pbc_agent.tools_impl.parse import parse_document
+            from pbc_agent.tools_impl.extract import extract_fields
+            from pbc_agent.tools_impl.search import evidence_query
+            if not doc.parsed:
+                parse_document(doc)
+            if not doc.extracted_fields:
+                extract_fields(doc, self.toolbox.eng)
+            standards = [str(f.value) for f in doc.extracted_fields if f.kind.value == "standard"]
+            cands = self.toolbox.matcher.match(
+                evidence_query(doc.filename, doc.text, standards), top_k=1)
+            if not cands:
+                continue
+            iid = cands[0][0]
+            if self.state.assessments[iid].status is not Status.NOT_STARTED:
+                continue   # don't override an item the agent already judged
+            self.toolbox.dispatch("verify_item", {"item_id": iid, "doc_ids": [doc.doc_id]},
+                                  "(completeness sweep)")
+            swept.append((doc.filename, iid))
+        if swept:
+            trace = EmailTrace(thread_id="—", message_source="(completeness sweep)",
+                               subject="Deterministic backstop — assessed unhandled deliveries")
+            for fn, iid in swept:
+                trace.tool_calls.append(ToolCallRecord(
+                    "verify_item", {"item_id": iid}, f"{fn} → {iid} "
+                    f"({self.state.assessments[iid].status.value})", True))
+                trace.item_ids_touched.append(iid)
+            self.state.trace.email_traces.append(trace)
 
     def _messages_in_order(self):
         msgs = [m for t in self.threads for m in t.messages]
