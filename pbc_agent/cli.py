@@ -40,6 +40,11 @@ def main(argv: list[str] | None = None) -> int:
     p_ui.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
     p_ui.add_argument("--port", type=int, default=8501)
 
+    p_web = sub.add_parser("web", help="Launch the bespoke localhost web app (FastAPI)")
+    p_web.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
+    p_web.add_argument("--port", type=int, default=8000)
+    p_web.add_argument("--host", default="127.0.0.1")
+
     p_eval = sub.add_parser("eval", help="Score the agent against labeled cases")
     p_eval.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
     p_eval.add_argument("--live", action="store_true")
@@ -51,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(args)
     if args.command == "ui":
         return _cmd_ui(args)
+    if args.command == "web":
+        from pbc_agent.webapp.server import serve
+        serve(bundle=str(args.bundle), host=args.host, port=args.port)
+        return 0
     if args.command == "eval":
         from pbc_agent.eval.score import evaluate, _print, _DEFAULT_LABELS
         _print(evaluate(args.bundle, _DEFAULT_LABELS, prefer_mock=not args.live))

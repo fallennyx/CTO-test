@@ -29,6 +29,10 @@ model = [
 report = [
     "jinja2>=3.1",          # HTML reviewer dashboard
 ]
+web = [
+    "fastapi>=0.110",       # localhost web app backend
+    "uvicorn>=0.29",        # ASGI server
+]
 pii = [
     "presidio-analyzer>=2.2",
 ]

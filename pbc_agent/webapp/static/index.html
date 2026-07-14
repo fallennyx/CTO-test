@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PBC Tracker</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#fff; --ink:#1f2430; --muted:#6b7280; --line:#e7e9f0;
+    --accent:#5b5bd6; --accent2:#7c5cff;
+    --green-bg:#e7f6ec; --green:#137a3c; --blue-bg:#e9f0fe; --blue:#1a56c4;
+    --amber-bg:#fff4de; --amber:#a86611; --red-bg:#fdeceb; --red:#c5352f;
+    --gray-bg:#eef0f4; --gray:#5f6672;
+    --shadow:0 1px 2px rgba(20,24,40,.06),0 6px 20px rgba(20,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg)}
+  a{color:var(--accent)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  header{background:linear-gradient(120deg,var(--accent),var(--accent2));color:#fff;
+         padding:22px 0 26px;box-shadow:var(--shadow)}
+  header .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .logo{font-size:26px}
+  h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
+  .sub{opacity:.9;font-size:13px;margin-top:2px}
+  .spacer{flex:1}
+  .hpill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+         padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600}
+  .hpill small{opacity:.8;font-weight:500}
+
+  .bar{margin-top:16px}
+  .headline{font-weight:600;margin:0 0 8px}
+  .track{height:9px;background:rgba(255,255,255,.28);border-radius:999px;overflow:hidden}
+  .track > i{display:block;height:100%;background:#fff;border-radius:999px;transition:width .6s ease}
+
+  .tabs{display:flex;gap:6px;margin:18px 0 6px}
+  .tab{padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:#fff;
+       cursor:pointer;font-weight:600;color:var(--muted)}
+  .tab.active{color:#fff;background:var(--accent);border-color:var(--accent)}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+  .chip{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);
+        border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .chip .n{color:var(--ink);font-weight:800}
+  .chip.active{outline:2px solid var(--accent);outline-offset:0}
+  .dot{width:9px;height:9px;border-radius:50%}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+        margin:10px 0;box-shadow:var(--shadow);cursor:pointer;display:grid;
+        grid-template-columns:118px 1fr auto;gap:14px;align-items:center;transition:transform .12s,box-shadow .12s}
+  .card:hover{transform:translateY(-1px);box-shadow:0 2px 4px rgba(20,24,40,.08),0 12px 28px rgba(20,24,40,.10)}
+  .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;text-align:center;white-space:nowrap}
+  .id{font-weight:700}
+  .desc{color:var(--muted);font-size:13.5px;margin-top:2px}
+  .badges{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+  .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--gray-bg);color:var(--gray)}
+  .badge.warn{background:var(--amber-bg);color:var(--amber)}
+  .badge.pii{background:var(--red-bg);color:var(--red)}
+  .badge.ver{background:var(--blue-bg);color:var(--blue)}
+  .conf{width:120px;text-align:right;color:var(--muted);font-size:12px}
+  .cbar{height:6px;background:var(--gray-bg);border-radius:999px;margin-top:5px;overflow:hidden}
+  .cbar > i{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .chev{color:var(--muted);font-size:20px;margin-left:6px}
+
+  .s-Complete{background:var(--green-bg);color:var(--green)} .d-Complete{background:var(--green)}
+  .s-Received{background:var(--blue-bg);color:var(--blue)} .d-Received{background:var(--blue)}
+  .s-Underreview{background:var(--amber-bg);color:var(--amber)} .d-Underreview{background:var(--amber)}
+  .s-Insufficient{background:var(--red-bg);color:var(--red)} .d-Insufficient{background:var(--red)}
+  .s-Notstarted{background:var(--gray-bg);color:var(--gray)} .d-Notstarted{background:var(--gray)}
+
+  /* side panel */
+  .overlay{position:fixed;inset:0;background:rgba(20,24,40,.28);opacity:0;pointer-events:none;transition:opacity .2s;z-index:5}
+  .overlay.show{opacity:1;pointer-events:auto}
+  .panel{position:fixed;top:0;right:0;height:100%;width:min(520px,94vw);background:#fff;z-index:6;
+         box-shadow:-8px 0 30px rgba(20,24,40,.18);transform:translateX(100%);transition:transform .28s cubic-bezier(.2,.7,.2,1);
+         overflow-y:auto}
+  .panel.show{transform:none}
+  .panel .ph{padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
+  .panel .pb{padding:18px 20px}
+  .close{float:right;border:none;background:var(--gray-bg);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px}
+  .section{margin:16px 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .kv{margin:6px 0}
+  .chipf{display:inline-block;background:var(--gray-bg);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-family:ui-monospace,Menlo,monospace}
+  .check{display:flex;gap:9px;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .check .ico{font-size:15px}
+  .cite{border-left:3px solid var(--line);padding-left:9px;margin:5px 0 0;color:var(--muted);font-size:12.5px}
+  .banner{background:var(--amber-bg);color:var(--amber);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px}
+  .banner.pii{background:var(--red-bg);color:var(--red)}
+  details.audit{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fbfbfe}
+  details.audit summary{cursor:pointer;font-weight:600;color:var(--muted)}
+  .trace{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#3a4051;margin:6px 0}
+  .trace .em{color:var(--muted)}
+  .trhr{border:none;border-top:1px solid var(--line);margin:8px 0}
+
+  /* follow-ups */
+  .fu{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0;box-shadow:var(--shadow)}
+  .fu textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:10px;padding:10px;font:13px/1.5 ui-monospace,Menlo,monospace;resize:vertical}
+  .btn{border:none;border-radius:9px;padding:8px 14px;font-weight:700;cursor:pointer;margin-right:8px}
+  .btn.p{background:var(--accent);color:#fff}
+  .btn.s{background:var(--gray-bg);color:var(--ink)}
+  .rationale{color:var(--muted);font-size:13px;margin:4px 0 10px}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;padding:28px 0}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#1f2430;color:#fff;
+         padding:11px 18px;border-radius:10px;opacity:0;transition:.25s;z-index:9;font-weight:600}
+  .toast.show{opacity:1;transform:translateX(-50%)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="logo">📋</div>
+    <div>
+      <h1>Audit Request Tracker</h1>
+      <div class="sub" id="sub">loading…</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="hpill" id="provider"></div>
+    <div class="hpill" id="cost">$—</div>
+  </div>
+  <div class="wrap bar">
+    <div class="headline" id="headline"></div>
+    <div class="track"><i id="progress" style="width:0"></i></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-view="tracker" onclick="setView('tracker')">📋 Tracker</div>
+    <div class="tab" data-view="followups" onclick="setView('followups')">✉️ Follow-ups <span id="fucount"></span></div>
+  </div>
+
+  <div id="tracker">
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+  </div>
+  <div id="followups" class="hidden"></div>
+</div>
+
+<footer>
+  Decisions are made from document contents, never filenames. Open any request for the full,
+  citation-backed audit trail. <span id="foot"></span>
+</footer>
+
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<aside class="panel" id="panel"></aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const NS = s => (s||"").replace(/\s/g,"");   // status -> class-safe
+let DATA=null, filter="All";
+
+async function load(){
+  const r = await fetch("/api/report"); DATA = await r.json();
+  const c = DATA.status_counts, total = Object.values(c).reduce((a,b)=>a+b,0);
+  const done = c["Complete"]||0, need = (c["Under review"]||0)+(c["Insufficient"]||0);
+  document.getElementById("sub").textContent =
+    `${DATA.client} — fiscal year ending ${DATA.fiscal_year_end}`;
+  document.getElementById("provider").innerHTML =
+    `<small>engine</small> ${DATA.provider==="live"?"Claude (live)":"offline demo"}`;
+  document.getElementById("cost").innerHTML =
+    `<small>cost</small> $${DATA.cost.usd.toFixed(2)} <small>/ $${DATA.cost.ceiling_usd}</small>`;
+  document.getElementById("headline").textContent =
+    `${done} of ${total} requests complete · ${need} need follow-up · ${c["Not started"]||0} not started`;
+  document.getElementById("progress").style.width = (100*done/total)+"%";
+  document.getElementById("fucount").textContent = `(${DATA.followups.length})`;
+  document.getElementById("foot").textContent =
+    `Processed ${DATA.cost.llm_calls} model calls under a $${DATA.cost.ceiling_usd} ceiling.`;
+  renderChips(); renderList(); renderFollowups();
+}
+
+const STATUSES=["All","Complete","Received","Under review","Insufficient","Not started"];
+function renderChips(){
+  const el=document.getElementById("chips"); el.innerHTML="";
+  STATUSES.forEach(s=>{
+    const n = s==="All" ? 30 : (DATA.status_counts[s]||0);
+    const d = document.getElementById; // noop
+    const chip=document.createElement("div");
+    chip.className="chip"+(filter===s?" active":"");
+    chip.innerHTML = (s==="All"?"":`<span class="dot d-${NS(s)}"></span>`)+
+                     `${s} <span class="n">${n}</span>`;
+    chip.onclick=()=>{filter=s;renderChips();renderList();};
+    el.appendChild(chip);
+  });
+}
+
+function badges(a){
+  let b="";
+  const ev=(a.primary_evidence||[]).length;
+  if(ev) b+=`<span class="badge">${ev} file${ev>1?"s":""}</span>`;
+  if(a.latest_version) b+=`<span class="badge ver">↻ ${a.latest_version}, supersedes ${a.superseded.length}</span>`;
+  (a.flags||[]).forEach(f=>{
+    if(/PII/.test(f)) b+=`<span class="badge pii">🔒 PII redacted</span>`;
+  });
+  if(a.needs_review) b+=`<span class="badge warn">⚠ needs review</span>`;
+  return b?`<div class="badges">${b}</div>`:"";
+}
+
+function renderList(){
+  const el=document.getElementById("list"); el.innerHTML="";
+  Object.keys(DATA.items).sort().forEach(id=>{
+    const a=DATA.items[id];
+    if(filter!=="All" && a.status!==filter) return;
+    const card=document.createElement("div"); card.className="card"; card.onclick=()=>openPanel(id);
+    const pct=Math.round(a.confidence*100);
+    card.innerHTML=`
+      <div><span class="pill s-${NS(a.status)}">${a.status}</span></div>
+      <div><span class="id">${id}</span> · <span>${DATA.descriptions[id]}</span>${badges(a)}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="conf">conf ${pct}%<div class="cbar"><i style="width:${pct}%"></i></div></div>
+        <div class="chev">›</div>
+      </div>`;
+    el.appendChild(card);
+  });
+}
+
+function checkIcon(o){return o==="pass"?"✅":o==="fail"?"❌":"❔";}
+
+function openPanel(id){
+  const a=DATA.items[id], p=document.getElementById("panel");
+  let checks=(a.checks||[]).map(c=>`
+    <div class="check"><div class="ico">${checkIcon(c.outcome)}</div>
+      <div><b>${c.criterion}</b> — ${c.detail}
+        ${(c.citations||[]).slice(0,2).map(ct=>`<div class="cite">source: ${ct.at} — “${ct.quote}”</div>`).join("")}
+      </div></div>`).join("");
+  let flags=(a.flags||[]).map(f=>`<div class="banner${/PII/.test(f)?' pii':''}">${/PII/.test(f)?'🔒':'⚠️'} ${f}</div>`).join("");
+  let evidence=(a.primary_evidence||[]).map(e=>`<span class="chipf">${e}</span>`).join("")||"<i>none yet</i>";
+  let open=(a.open_items||[]).length && a.status!=="Complete"
+      ? `<div class="banner">Still needed: ${a.open_items.map(o=>o.split(': ').slice(-1)).join('; ')}</div>`:"";
+  const traces=(DATA.traces[id]||[]);
+  let audit = traces.length? `<details class="audit"><summary>Audit detail — agent plan &amp; tool calls</summary>`+
+    traces.map(t=>`<div class="trace"><b>${t.message}</b> <span class="em">${t.subject}</span><br>`+
+      `<span class="em">model:</span> ${(t.models||[]).join(", ")}<br>`+
+      (t.plan||[]).map(x=>`<span class="em">•</span> ${x}`).join("<br>")+"<br>"+
+      (t.tools||[]).map(x=>`${x.ok?"✓":"✗"} <b>${x.name}</b> → ${x.summary}`).join("<br>")+
+      `</div>`).join("<hr class='trhr'>")+`</details>`:"";
+
+  p.innerHTML=`<div class="ph"><button class="close" onclick="closePanel()">✕</button>
+      <span class="pill s-${NS(a.status)}">${a.status}</span>
+      <h2 style="margin:8px 0 2px;font-size:17px">${id}</h2>
+      <div style="color:var(--muted);font-size:13.5px">${DATA.descriptions[id]}</div></div>
+    <div class="pb">
+      ${flags}
+      <div class="section">What the client sent</div>${evidence}
+      <div class="section">Our reading</div><div class="kv">${a.reasoning||"—"}</div>
+      ${open}
+      <div class="section">What we checked</div>${checks||"<i>No acceptance criteria evaluated.</i>"}
+      ${audit}
+    </div>`;
+  p.classList.add("show"); document.getElementById("overlay").classList.add("show");
+}
+function closePanel(){document.getElementById("panel").classList.remove("show");
+  document.getElementById("overlay").classList.remove("show");}
+
+function renderFollowups(){
+  const el=document.getElementById("followups"); el.innerHTML="";
+  if(!DATA.followups.length){el.innerHTML="<div class='fu'>🎉 Nothing outstanding — no follow-ups needed.</div>";return;}
+  const intro=document.createElement("div"); intro.className="rationale";
+  intro.textContent="One grouped email per recipient. Review and approve — “Send” is mocked.";
+  el.appendChild(intro);
+  DATA.followups.forEach((g,i)=>{
+    const d=document.createElement("div"); d.className="fu";
+    d.innerHTML=`<div><b>To:</b> ${g.recipient}</div>
+      ${g.cc&&g.cc.filter(Boolean).length?`<div style="color:var(--muted);font-size:13px"><b>cc:</b> ${g.cc.filter(Boolean).join(", ")}</div>`:""}
+      <div><b>Subject:</b> ${g.subject}</div>
+      <div class="rationale">${g.rationale}</div>
+      <textarea id="fu${i}">${g.body}</textarea>
+      <div style="margin-top:10px">
+        <button class="btn p" onclick="toast('Approved &amp; sent (mocked)')">✅ Approve &amp; send</button>
+        <button class="btn s" onclick="toast('Saved edits')">✏️ Save edit</button>
+        <button class="btn s" onclick="toast('Draft rejected')">🗑️ Reject</button>
+      </div>`;
+    el.appendChild(d);
+  });
+}
+
+function setView(v){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===v));
+  document.getElementById("tracker").classList.toggle("hidden",v!=="tracker");
+  document.getElementById("followups").classList.toggle("hidden",v!=="followups");
+}
+let toastT;
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),1800);}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closePanel();});
+load();
+</script>
+</body>
+</html>

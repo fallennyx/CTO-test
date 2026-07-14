@@ -24,10 +24,15 @@ for whatever is still open.
 - **Auditable**: every status carries a plan + tool-call + verifier trace, and every fact a
   page/sheet citation. Reasoning is composed only from checks that passed/failed — no invented
   numbers.
+- **Robust to unseen / adversarial data**: a **PII gate** (detect + redact + flag), a
+  **conflict/anomaly detector** (filename-vs-content, wrong period, low confidence →
+  `needs_review`), and **version supersession** with lineage. A generalization harness randomly
+  generates dozens of unseen traps each run and asserts **100% are caught** (60/60).
 - **Cheap & bounded**: BM25 matching and all parsing are $0; only per-email planning hits the
   LLM (Haiku, escalating to Sonnet when hard). **~$0.14** per sample inbox, hard **$5** ceiling.
-- **Client-friendly UI** (Streamlit): Tracker, a plain-English **"Why?"** panel, and follow-up
-  review — jargon tucked behind an "Audit detail" expander.
+- **Bespoke localhost web app** (FastAPI + a self-contained SPA, `pbc web`): a polished tracker
+  with a slide-in **"Why?"** panel, citations, needs-review/PII/version badges, and follow-up
+  review. (A lightweight Streamlit UI, `pbc ui`, is also included.)
 - **Config-driven, zero hardcoding**: the PBC list PDF + client profile are the config; swap
   them at review and re-run.
 
@@ -36,16 +41,20 @@ for whatever is still open.
 Phase-1 ingest needs no dependencies. For the full agent + UI:
 
 ```bash
-pip install -e '.[parse,llm,report,dev]'     # deps (also: system `tesseract` for OCR)
+pip install -e '.[parse,llm,report,web,dev]'   # deps (also: system `tesseract` for OCR)
 
 # Run the agent over a mailbox -> tracker JSON (offline mock, no key needed)
 python -m pbc_agent.cli run --bundle data/sample_bundle --mock
 
-# Launch the client-friendly UI
-python -m pbc_agent.cli ui --bundle data/sample_bundle
+# Launch the bespoke localhost web app  ->  http://127.0.0.1:8000
+python -m pbc_agent.cli web --bundle data/sample_bundle
+# (or the lightweight Streamlit UI:  python -m pbc_agent.cli ui --bundle data/sample_bundle)
 
 # Score against labeled cases (accuracy / insufficiency-F1 / tool-sequence / cost)
 python -m pbc_agent.cli eval --bundle data/sample_bundle
+
+# Prove generalization: dozens of randomly-generated unseen traps, all caught
+python -m tests.test_generalization
 
 # Just enumerate a mailbox (recursion engine)
 python -m pbc_agent.cli ingest --bundle data/sample_bundle --show-chains
