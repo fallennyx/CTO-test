@@ -111,7 +111,9 @@ class Document:
 
     # Populated by Phase-2 parsers:
     text: str = ""
+    pages: list[str] = field(default_factory=list)   # per-page text (PDF/image) for citations
     ocr_used: bool = False
+    parsed: bool = False
     sheets: list[Sheet] = field(default_factory=list)
     extracted_fields: list[ExtractedField] = field(default_factory=list)
     pii_findings: list[PIIFinding] = field(default_factory=list)
