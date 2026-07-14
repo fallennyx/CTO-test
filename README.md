@@ -29,7 +29,8 @@ for whatever is still open.
   `needs_review`), and **version supersession** with lineage. A generalization harness randomly
   generates dozens of unseen traps each run and asserts **100% are caught** (60/60).
 - **Cheap & bounded**: BM25 matching and all parsing are $0; only per-email planning hits the
-  LLM (Haiku, escalating to Sonnet when hard). **~$0.14** per sample inbox, hard **$5** ceiling.
+  LLM (Haiku, escalating to Sonnet when hard). **~$0.6** per sample inbox (uncached upper-bound
+  estimate); the ~90-email held-out projects to **~$1.4**, hard **$5** ceiling. See `pbc bench`.
 - **Bespoke localhost web app** (FastAPI + a self-contained SPA, `pbc web`): a polished tracker
   with a slide-in **"Why?"** panel, citations, needs-review/PII/version badges, and follow-up
   review. (A lightweight Streamlit UI, `pbc ui`, is also included.)

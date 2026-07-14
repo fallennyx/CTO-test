@@ -41,7 +41,8 @@ class MockProvider:
         results = _tool_results(messages)
         attachments = ctx.get("attachments", [])
 
-        turn = AssistantTurn(stop_reason="tool_use", model=model, usage_in=350, usage_out=90)
+        # usage left at 0 so the loop grounds token cost in the real prompt size.
+        turn = AssistantTurn(stop_reason="tool_use", model=model, usage_in=0, usage_out=0)
 
         # --- text-only emails: reschedule or nothing to do -------------------------------
         if not attachments:

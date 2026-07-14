@@ -119,7 +119,13 @@ class AgentRunner:
 
         for _ in range(_MAX_STEPS):
             turn = self.provider.converse(SYSTEM_PROMPT, messages, self.toolbox.specs(), model)
-            self.state.budget.add(model, turn.usage_in, turn.usage_out)
+            # Live providers report real token usage; for the offline mock we estimate from the
+            # actual serialized prompt/response sizes (~4 chars/token) so cost is grounded in
+            # real prompt volume, not a fixed guess.
+            usage_in = turn.usage_in or _estimate_tokens(SYSTEM_PROMPT, messages,
+                                                         self.toolbox.specs())
+            usage_out = turn.usage_out or _estimate_out_tokens(turn)
+            self.state.budget.add(model, usage_in, usage_out)
             if turn.text:
                 trace.plan_notes.append(turn.text)
             messages.append({"role": "assistant", "content": _assistant_blocks(turn)})
@@ -157,6 +163,20 @@ class AgentRunner:
         trace.tool_calls.append(ToolCallRecord("draft_followups", {}, summary,
                                                "error" not in result))
         self.state.trace.email_traces.append(trace)
+
+
+def _estimate_tokens(system: str, messages: list[dict], specs) -> int:
+    """Rough token estimate (~4 chars/token) from the actual prompt volume."""
+    chars = len(system) + sum(len(s.name) + len(s.description) + len(json.dumps(s.input_schema))
+                              for s in specs)
+    chars += len(json.dumps(messages))
+    return max(1, chars // 4)
+
+
+def _estimate_out_tokens(turn) -> int:
+    chars = len(turn.text or "") + sum(len(json.dumps(c.input)) + len(c.name)
+                                       for c in turn.tool_calls)
+    return max(1, chars // 4)
 
 
 def _assistant_blocks(turn) -> list[dict]:

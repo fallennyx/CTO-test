@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
     p_eval.add_argument("--live", action="store_true")
 
+    p_bench = sub.add_parser("bench", help="Throughput + held-out cost projection")
+    p_bench.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
+    p_bench.add_argument("--live", action="store_true")
+    p_bench.add_argument("--held-out-emails", type=int, default=90)
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         return _cmd_ingest(args)
@@ -63,6 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "eval":
         from pbc_agent.eval.score import evaluate, _print, _DEFAULT_LABELS
         _print(evaluate(args.bundle, _DEFAULT_LABELS, prefer_mock=not args.live))
+        return 0
+    if args.command == "bench":
+        from pbc_agent.eval.bench import benchmark, _print
+        _print(benchmark(args.bundle, prefer_mock=not args.live,
+                         held_out_emails=args.held_out_emails))
         return 0
     return 1
 

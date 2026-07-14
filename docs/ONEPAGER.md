@@ -68,11 +68,18 @@ sample, leaked PII, misleading filename — and asserts **100% are downgraded or
 *Current (offline mock provider, sample bundle):* status accuracy 10/13, insufficiency
 precision 1.0, tool-sequence match 1.0. Live native tool-use lifts matching further.
 
-## Measured cost
+## Cost — how it's known
 
-**~$0.14 per full sample inbox** (39 emails), metered by the budget meter and shown in the UI;
-the held-out (~2.4× emails) projects to well under the **$5** ceiling. A hard circuit-breaker
-degrades to deterministic-only if the ceiling is approached. Matching/parse/OCR are $0.
+Cost is metered by a per-model budget meter (`llm/budget.py`): tokens × published list prices.
+**Live**, token counts come from the Anthropic API's reported `usage` (real spend). **Offline**,
+they're estimated from the *actual* serialized prompt size (~4 chars/token) — a grounded,
+uncached **upper bound**, not a fixed guess. `python -m pbc_agent.cli bench` prints it and
+projects the held-out.
+
+- Sample (39 emails): **~$0.6** (uncached estimate); parse/OCR/BM25 matching are $0.
+- Held-out (~90 emails) projection: **~$1.4 — well under the $5 ceiling**; live prompt-caching on
+  the static system+tools prefix lowers it further. A circuit-breaker degrades to
+  deterministic-only if the ceiling is approached.
 
 ## What breaks at 10 and 100 concurrent audits
 
