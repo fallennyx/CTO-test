@@ -29,10 +29,44 @@ def main(argv: list[str] | None = None) -> int:
     p_ingest.add_argument("--show-chains", action="store_true",
                           help="Print the container chain for every nested document")
 
+    p_run = sub.add_parser("run", help="Run the agent over a mailbox -> tracker JSON")
+    p_run.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
+    p_run.add_argument("--out", type=Path, default=Path("out/report.json"))
+    p_run.add_argument("--ceiling", type=float, default=5.0, help="USD budget ceiling")
+    p_run.add_argument("--mock", action="store_true",
+                       help="Force the offline mock provider (no API key needed)")
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         return _cmd_ingest(args)
+    if args.command == "run":
+        return _cmd_run(args)
     return 1
+
+
+def _cmd_run(args) -> int:
+    import json
+
+    from pbc_agent.agent.loop import run_agent
+    from pbc_agent.llm.provider import get_provider
+
+    provider = get_provider(prefer_mock=args.mock)
+    print(f"Running agent on {args.bundle} using provider: {provider.name} "
+          f"(budget ${args.ceiling:.2f})...")
+    state = run_agent(args.bundle, prefer_mock=args.mock, ceiling_usd=args.ceiling)
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(state.to_report(), indent=2))
+
+    _rule("TRACKER")
+    for status, n in state.status_counts().items():
+        print(f"  {status:14s} {n}")
+    cost = state.budget.summary()
+    print(f"\nCost: ${cost['usd']:.4f}  ({cost['llm_calls']} LLM calls, "
+          f"{cost['input_tokens']}+{cost['output_tokens']} tokens)  ceiling ${cost['ceiling_usd']}")
+    print(f"Follow-up groups drafted: {len(state.followups)}")
+    print(f"Report written to {args.out}")
+    return 0
 
 
 def _cmd_ingest(args) -> int:
