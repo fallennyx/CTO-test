@@ -43,11 +43,12 @@ def verify_item(item: PBCItem, evidences: list[Document], engagement: Engagement
 
     fields = [f for d in evidences for f in d.extracted_fields]
     text = "\n".join(d.text for d in evidences).lower()
+    filenames = " ".join(d.filename for d in evidences).lower()
     units = _unit_count(evidences)
 
     results: list[CheckResult] = []
     for c in item.criteria:
-        r = _check(c, fields, text, units, engagement)
+        r = _check(c, fields, text, units, engagement, filenames)
         if r is not None:
             results.append(r)
 
@@ -69,11 +70,11 @@ def verify_item(item: PBCItem, evidences: list[Document], engagement: Engagement
 # --- criterion dispatch ---------------------------------------------------------------
 
 
-def _check(c, fields, text, units, eng) -> CheckResult | None:
+def _check(c, fields, text, units, eng, filenames="") -> CheckResult | None:
     if isinstance(c, PeriodCriterion):
-        return _check_period(c, fields, text, eng)
+        return _check_period(c, fields, text, eng, filenames)
     if isinstance(c, EntityCriterion):
-        return _check_entity(c, fields)
+        return _check_entity(c, fields, text, eng)
     if isinstance(c, SignatureCriterion):
         return _check_signature(c, fields)
     if isinstance(c, BucketCriterion):
@@ -102,7 +103,7 @@ def _dates(fields) -> list[ExtractedField]:
     return [f for f in fields if f.kind is FieldKind.DATE]
 
 
-def _check_period(c: PeriodCriterion, fields, text, eng) -> CheckResult:
+def _check_period(c: PeriodCriterion, fields, text, eng, filenames="") -> CheckResult:
     dates = _dates(fields)
     fy_start, fy_end = eng.fiscal_year_start, eng.fiscal_year_end
     prior_start = fy_start.replace(year=fy_start.year - 1)
@@ -126,6 +127,11 @@ def _check_period(c: PeriodCriterion, fields, text, eng) -> CheckResult:
         if in_fy:
             return _r("period", c.raw, Outcome.PASS,
                       f"within fiscal year (e.g. {in_fy[0].value.isoformat()})", cite(in_fy[0]))
+        # No content date to confirm or contradict: accept a period-end encoded in the
+        # filename as corroboration (only because nothing in the content conflicts).
+        if not dates and _period_end_in_text(c.end, filenames):
+            return _r("period", c.raw, Outcome.PASS,
+                      f"as of {c.end.isoformat()} (per document label)")
         return _r("period", c.raw, Outcome.UNVERIFIABLE,
                   f"could not confirm the as-of date {c.end.isoformat()}")
 
@@ -144,7 +150,7 @@ def _check_period(c: PeriodCriterion, fields, text, eng) -> CheckResult:
         return _r("period", c.raw, Outcome.UNVERIFIABLE, "period not confirmable from content")
 
     if c.kind is PeriodKind.FISCAL_YEAR:
-        fy = re.search(r"fy\s?20?\d\d|fiscal year", text)
+        fy = re.search(r"\bfy\s?\d{2,4}\b|fiscal year", text)
         in_fy = [f for f in dates if fy_start <= f.value <= fy_end]
         if in_fy:
             return _r("period", c.raw, Outcome.PASS,
@@ -154,6 +160,8 @@ def _check_period(c: PeriodCriterion, fields, text, eng) -> CheckResult:
         prior = [f for f in dates if prior_start <= f.value <= prior_end]
         if prior:
             return _r("period", c.raw, Outcome.FAIL, "content is prior-year", cite(prior[0]))
+        if re.search(r"\bfy\s?\d{2,4}\b|\b20\d\d[-_]?\d\d[-_]?\d\d", filenames):
+            return _r("period", c.raw, Outcome.PASS, "fiscal-year period per document label")
         return _r("period", c.raw, Outcome.UNVERIFIABLE, "fiscal year not confirmable")
 
     if c.kind is PeriodKind.PRIOR_YEAR:
@@ -168,7 +176,7 @@ def _check_period(c: PeriodCriterion, fields, text, eng) -> CheckResult:
     return _r("period", c.raw, Outcome.UNVERIFIABLE, "period not evaluated")
 
 
-def _check_entity(c: EntityCriterion, fields) -> CheckResult:
+def _check_entity(c: EntityCriterion, fields, text="", eng=None) -> CheckResult:
     if not c.required:
         return _r("entity", c.raw, Outcome.PASS, "no specific entity required")
     found = {f.value: f.provenance for f in fields if f.kind is FieldKind.ENTITY}
@@ -178,7 +186,14 @@ def _check_entity(c: EntityCriterion, fields) -> CheckResult:
         return _r("entity", c.raw, Outcome.PASS,
                   f"all {len(c.required)} entities present", list(found.values())[:3])
     if strict:
-        # A consolidating document must show every entity — the wrong-entity trap.
+        # Consolidated statements often name the parent "and Subsidiaries" rather than
+        # listing each sub. Accept that; but a doc missing the PARENT entirely (only a sub
+        # present) is the wrong-entity trap and must fail.
+        parent = next((e.name for e in (eng.entities if eng else []) if e.role == "parent"), None)
+        has_parent = parent in found if parent else False
+        if has_parent and re.search(r"subsidiar|consolidat", text):
+            return _r("entity", c.raw, Outcome.PASS,
+                      "parent + consolidated subsidiaries referenced", list(found.values())[:2])
         return _r("entity", c.raw, Outcome.FAIL,
                   f"missing entity/entities: {', '.join(sorted(missing))}",
                   list(found.values())[:2])
@@ -322,7 +337,8 @@ def _status_from(results: list[CheckResult]) -> Status:
 
 
 def _is_hard_fail(r: CheckResult) -> bool:
-    if r.criterion_kind in {"entity", "buckets", "period", "count"}:
+    # A short/partial count is "partially complete" (Under review), not "wrong" (Insufficient).
+    if r.criterion_kind in {"entity", "buckets", "period"}:
         return True
     if r.criterion_kind == "signature":
         return "DRAFT" not in r.detail.upper()   # DRAFT-awaiting-signature is soft

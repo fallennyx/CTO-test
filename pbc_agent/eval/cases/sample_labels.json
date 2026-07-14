@@ -1,0 +1,22 @@
+{
+  "_note": "Labeled expectations for the sample bundle, keyed to PBC LIST item ids (the config the agent runs on). Statuses use the tracker vocabulary. Under review == delivered-but-incomplete.",
+  "statuses": {
+    "PBC-01": "Complete",
+    "PBC-02": "Under review",
+    "PBC-04": "Complete",
+    "PBC-06": "Under review",
+    "PBC-10": "Complete",
+    "PBC-11": "Under review",
+    "PBC-13": "Complete",
+    "PBC-16": "Complete",
+    "PBC-22": "Complete",
+    "PBC-24": "Under review",
+    "PBC-26": "Complete",
+    "PBC-28": "Complete",
+    "PBC-30": "Complete"
+  },
+  "tool_sequences": {
+    "thread01_msg01.eml": ["parse_attachment", "extract_fields", "match_item", "verify_item", "finish"],
+    "thread05_msg02.eml": ["note_schedule", "finish"]
+  }
+}

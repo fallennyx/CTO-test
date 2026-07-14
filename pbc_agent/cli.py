@@ -36,12 +36,36 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--mock", action="store_true",
                        help="Force the offline mock provider (no API key needed)")
 
+    p_ui = sub.add_parser("ui", help="Launch the Streamlit tracker UI")
+    p_ui.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
+    p_ui.add_argument("--port", type=int, default=8501)
+
+    p_eval = sub.add_parser("eval", help="Score the agent against labeled cases")
+    p_eval.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
+    p_eval.add_argument("--live", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         return _cmd_ingest(args)
     if args.command == "run":
         return _cmd_run(args)
+    if args.command == "ui":
+        return _cmd_ui(args)
+    if args.command == "eval":
+        from pbc_agent.eval.score import evaluate, _print, _DEFAULT_LABELS
+        _print(evaluate(args.bundle, _DEFAULT_LABELS, prefer_mock=not args.live))
+        return 0
     return 1
+
+
+def _cmd_ui(args) -> int:
+    import subprocess
+
+    app = Path(__file__).parent / "ui" / "app.py"
+    cmd = ["streamlit", "run", str(app), "--server.port", str(args.port),
+           "--", "--bundle", str(args.bundle)]
+    print("Launching UI:", " ".join(cmd))
+    return subprocess.call(cmd)
 
 
 def _cmd_run(args) -> int:

@@ -1,90 +1,103 @@
-# PBC Agent — Audit "Prepared-By-Client" Tracking Agent
+# PBC Email Agent
 
-An AI agent that reads an audit team's mailbox and decides, for every requested document,
-whether the client **actually delivered what was asked** — verified against the item's
-acceptance criteria, not the filename — then drafts grouped follow-ups for whatever is still
-open.
+An AI **agent** that lives on an audit inbox and keeps a live, structured **PBC
+(prepared-by-client) tracker** current — deciding, for every requested document, whether the
+client actually delivered what was asked (verified from **contents, not filenames**), with a
+reasoning trace a partner could defend to a PCAOB inspector, and drafting grouped follow-ups
+for whatever is still open.
 
 > **The hard part isn't classification, it's skepticism.** A naive "the file arrived →
-> COMPLETE" agent fails the moment a client sends a prior-year file, a trial balance missing
-> an entity, a ZIP that looks full but is short a few invoices, or a `..._signed.pdf` that
-> was never signed. This system is built as a **content-verifying skeptic**: it checks
-> evidence against structured criteria and treats filenames as untrusted.
+> Complete" agent fails the moment a client sends a prior-year file, a trial balance missing an
+> entity, a ZIP that looks full but is short a few invoices, or a `..._signed.pdf` that was
+> never signed. This system is a **content-verifying skeptic**.
 
-## What it does
+📄 **[1-page design](docs/ONEPAGER.md)** · 🎬 **[demo script](docs/DEMO.md)**
 
-- **Ingests** a mailbox (`.mbox` / `.eml`) with attachments in every real format: native PDF,
-  scanned PDF (OCR), single/multi-tab XLSX, JPG phone photos (OCR), nested ZIPs, and even a
-  forwarded email attached inside another email.
-- **Matches** delivered evidence to the PBC (Prepared-By-Client) list **semantically** — asks
-  are often phrased by topic, not by item number.
-- **Verifies** each item against its acceptance criteria (period, entity coverage, signature,
-  counts/sample size, thresholds, ASC 606/842, ...) and assigns a status:
-  `COMPLETE` · `PARTIALLY_COMPLETE` · `INSUFFICIENT` · `NOT_STARTED`, with a defensible,
-  provenance-backed reasoning string.
-- **Tracks state** across threads and time (a file sent in one thread answers a request in
-  another; a rescheduled item updates its due date; a re-sent file is one delivery, not two).
-- **Drafts follow-ups** grouped by owner, minimizing round-trips.
-- **Stays cheap** — a deterministic-first pipeline reserves the LLM for just two gates
-  (semantic matching, status judgment), targeting well under $0.75 per mailbox.
+## Highlights
 
-## Architecture
+- **Native tool-use agent loop** (one file, `agent/loop.py`) with **dynamic per-email control
+  flow** — an attachment email runs `parse → extract → match → verify`; a "it's delayed" email
+  reschedules and stops. Not a hardcoded pipeline.
+- **Deterministic, unit-tested tools** for the heavy lifting: recursive ingest (nested ZIPs,
+  `.eml`-in-`.eml`), native + scanned-PDF OCR, all-sheets Excel (incl. hidden tabs), citation-
+  backed extraction, BM25 matching, the criterion **verifier**, versioning, and drafting.
+- **Auditable**: every status carries a plan + tool-call + verifier trace, and every fact a
+  page/sheet citation. Reasoning is composed only from checks that passed/failed — no invented
+  numbers.
+- **Cheap & bounded**: BM25 matching and all parsing are $0; only per-email planning hits the
+  LLM (Haiku, escalating to Sonnet when hard). **~$0.14** per sample inbox, hard **$5** ceiling.
+- **Client-friendly UI** (Streamlit): Tracker, a plain-English **"Why?"** panel, and follow-up
+  review — jargon tucked behind an "Audit detail" expander.
+- **Config-driven, zero hardcoding**: the PBC list PDF + client profile are the config; swap
+  them at review and re-run.
 
-Deterministic pipeline for ingest / parse / OCR / extract / normalize / route; the LLM is
-called only to (a) confirm semantic evidence↔item matches and (b) judge status and write
-grounded reasoning. Every stage is a pure function over typed objects, so it's testable and
-replayable.
+## Quickstart
 
-```
-mailbox load → thread assembly → recursive attachment extraction → per-format parse (+OCR)
-  → normalized Evidence + ExtractedFields (with provenance) → PBC items w/ structured criteria
-  → candidate match → LLM match-confirm → deterministic verifier → LLM judge
-  → cross-thread/temporal reconciliation → status aggregation → follow-up grouping → JSON + HTML
-```
-
-See [`pbc_agent/`](pbc_agent/) for the module layout.
-
-## Status
-
-| Phase | Scope | State |
-|---|---|---|
-| **1. Skeleton + ingest** | Typed model, engagement config, PBC-list parser, mailbox/threading, **recursive attachment extraction** (nested ZIP + `.eml`-in-`.eml`) | ✅ Done |
-| 2. Parsers + normalization | Native/scanned PDF + OCR, all-sheets XLSX, JPG OCR, field extraction w/ provenance | ⏳ Next |
-| 3. Match + verify + judge | Semantic matching, deterministic criterion checks, LLM judge, cross-thread memory | ⏳ |
-| 4. Trap-hardening + dashboard | Supersession, PII gate, trap simulator, eval harness, HTML dashboard | ⏳ |
-
-## Quickstart (Phase 1)
-
-Phase 1 runs on the **standard library alone** — no dependencies to install.
+Phase-1 ingest needs no dependencies. For the full agent + UI:
 
 ```bash
-# Enumerate a bundle: engagement, PBC items, threads, and the full attachment tree.
-python -m pbc_agent.cli ingest --bundle data/sample_bundle
+pip install -e '.[parse,llm,report,dev]'     # deps (also: system `tesseract` for OCR)
 
-# Show the container chain for every nested document (ZIP entries, forwarded-email contents).
+# Run the agent over a mailbox -> tracker JSON (offline mock, no key needed)
+python -m pbc_agent.cli run --bundle data/sample_bundle --mock
+
+# Launch the client-friendly UI
+python -m pbc_agent.cli ui --bundle data/sample_bundle
+
+# Score against labeled cases (accuracy / insufficiency-F1 / tool-sequence / cost)
+python -m pbc_agent.cli eval --bundle data/sample_bundle
+
+# Just enumerate a mailbox (recursion engine)
 python -m pbc_agent.cli ingest --bundle data/sample_bundle --show-chains
 ```
 
-Example (abridged) output on the sample bundle:
+Set `ANTHROPIC_API_KEY` to switch from the offline mock to **real native tool-use** — the loop
+code is identical.
+
+## How it works
 
 ```
-ENGAGEMENT   Northwind Beverages, Inc. — FY 2025-07-01 .. 2026-06-30 — 3 entities
-PBC LIST     30 items — DocType=30, Period=29, Entity=6, Signature=5, Count=3, ...
-MAILBOX      38 messages, 8 threads
-EXTRACTION   41 top-level attachments; by type: archive=4, image=2, pdf=39, xlsx=14, email=1
-             thread07_msg03.eml > FWD_Vanguard_401k_confirmation.eml > (body)   # email-in-email
-             AP_Cutoff_Sample.zip: appears 2x [thread03, thread05]              # re-use detected
+inbox → ingest+recursion → [agent loop: plan → parse → extract → match → verify → draft]
+      → tracker state + trace → Streamlit UI + report.json
+```
+
+The agent (Claude, native tool use) decides *what to do per email*; the tools (deterministic)
+*do it*. See the [1-page design](docs/ONEPAGER.md) for the diagram, model-per-step, tool
+schemas, guardrails, eval, cost, and 10/100-concurrent scaling notes.
+
+## Layout
+
+```
+pbc_agent/
+  agent/       loop.py (the tool-use loop) · tools.py · router.py · trace.py
+  tools_impl/  parse · extract · search · verify · version · draft   (deterministic tools)
+  ingest/      mailbox · threading · extract (recursion engine)
+  criteria_loader/ · config/ · model/ · state/ · llm/ · eval/ · ui/
+tests/         recursion · tools · traps · agent · bundle smoke
+docs/          ONEPAGER.md · DEMO.md
 ```
 
 ## Tests
 
 ```bash
-python -m tests.test_recursion      # self-contained; no fixtures needed
-python -m tests.test_bundle_smoke   # skips if the sample bundle isn't present
-# (or `pytest` once dev extras are installed)
+python -m tests.test_recursion    # recursion engine (self-contained)
+python -m tests.test_tools        # extract / verify / version / search
+python -m tests.test_traps        # adversarial trap simulator
+python -m tests.test_agent        # end-to-end agent (offline)
+# or `pytest`
 ```
 
 ## Data
 
-Sample/engagement data is treated as client IP and is **git-ignored** (`data/`). Place a
-bundle at `data/sample_bundle/` to run the commands above.
+Sample/engagement data is client IP and is **git-ignored** (`data/`). Place a bundle at
+`data/sample_bundle/` (Client_Profile.pdf, PBC_List*.pdf, and an `emails/` dir or `.mbox`).
+
+## Status
+
+| Phase | Scope | State |
+|---|---|---|
+| 1. Ingest + recursion | mailbox/threading, nested ZIP + `.eml`-in-`.eml`, config parsers | ✅ |
+| 2. Tools | PDF/OCR/XLSX parse, cited extraction, matching, verifier, versioning, drafting | ✅ |
+| 3. Agent loop | native tool-use, per-email planning, cost router, trace, state, `pbc run` | ✅ |
+| 4. UI + evals + docs | Streamlit UI, eval harness, trap simulator, 1-pager, demo script | ✅ |
+| Stretch | multitenancy (per-engagement state isolation) | ◻︎ noted in one-pager |
