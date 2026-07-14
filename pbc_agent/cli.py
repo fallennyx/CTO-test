@@ -35,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--ceiling", type=float, default=5.0, help="USD budget ceiling")
     p_run.add_argument("--mock", action="store_true",
                        help="Force the offline mock provider (no API key needed)")
+    p_run.add_argument("--max-emails", type=int, default=None,
+                       help="Process only the first N emails (cheap live smoke test)")
+    p_run.add_argument("--trace", action="store_true",
+                       help="Print the per-email plan + tool-call trace")
 
     p_ui = sub.add_parser("ui", help="Launch the Streamlit tracker UI")
     p_ui.add_argument("--bundle", type=Path, default=Path("data/sample_bundle"))
@@ -94,12 +98,34 @@ def _cmd_run(args) -> int:
     from pbc_agent.llm.provider import get_provider
 
     provider = get_provider(prefer_mock=args.mock)
+    scope = f", first {args.max_emails} emails" if args.max_emails else ""
     print(f"Running agent on {args.bundle} using provider: {provider.name} "
-          f"(budget ${args.ceiling:.2f})...")
-    state = run_agent(args.bundle, prefer_mock=args.mock, ceiling_usd=args.ceiling)
+          f"(budget ${args.ceiling:.2f}{scope})...")
+    state = run_agent(args.bundle, prefer_mock=args.mock, ceiling_usd=args.ceiling,
+                      max_emails=args.max_emails)
+
+    # Live run that made zero successful model calls -> the API/key never worked.
+    if not args.mock and state.budget.summary()["llm_calls"] == 0:
+        note = next((n for t in state.trace.email_traces for n in t.plan_notes
+                     if "LLM call failed" in n), "no successful model calls")
+        print(f"\nerror: live run made no successful model calls — {note}", file=sys.stderr)
+        return 3
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(state.to_report(), indent=2))
+
+    if args.trace:
+        _rule("AGENT TRACE")
+        for t in state.trace.email_traces:
+            if not t.tool_calls:
+                continue
+            print(f"\n{t.message_source}  ({', '.join(t.models_used) or '—'})")
+            print(f"  {t.subject[:70]}")
+            for note in t.plan_notes:
+                print(f"    · {note[:100]}")
+            for c in t.tool_calls:
+                mark = "OK" if c.ok else "!!"
+                print(f"    [{mark}] {c.name}: {c.result_summary[:80]}")
 
     _rule("TRACKER")
     for status, n in state.status_counts().items():

@@ -62,7 +62,12 @@ python -m pbc_agent.cli ingest --bundle data/sample_bundle --show-chains
 ```
 
 Set `ANTHROPIC_API_KEY` to switch from the offline mock to **real native tool-use** — the loop
-code is identical.
+code is identical. Confirm the live path in ~30 seconds (a few cents):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+scripts/smoke_live.sh            # runs 3 emails live, prints the trace + measured cost
+```
 
 ## How it works
 

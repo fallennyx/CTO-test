@@ -83,8 +83,10 @@ class AgentRunner:
 
     # --- run --------------------------------------------------------------------------
 
-    def run(self) -> TrackerState:
-        for message in self._messages_in_order():
+    def run(self, max_emails: int | None = None) -> TrackerState:
+        for i, message in enumerate(self._messages_in_order()):
+            if max_emails is not None and i >= max_emails:
+                break
             if self.state.budget.exhausted:
                 break
             self._process_email(message)
@@ -118,7 +120,13 @@ class AgentRunner:
                      "content": [{"type": "text", "text": "EMAIL_CONTEXT: " + json.dumps(ctx)}]}]
 
         for _ in range(_MAX_STEPS):
-            turn = self.provider.converse(SYSTEM_PROMPT, messages, self.toolbox.specs(), model)
+            try:
+                turn = self.provider.converse(SYSTEM_PROMPT, messages, self.toolbox.specs(), model)
+            except Exception as e:   # a model/API hiccup on one email must not kill the run
+                trace.plan_notes.append(f"LLM call failed ({type(e).__name__}: {e}); "
+                                        f"skipping this email.")
+                self.state.trace.email_traces.append(trace)
+                return
             # Live providers report real token usage; for the offline mock we estimate from the
             # actual serialized prompt/response sizes (~4 chars/token) so cost is grounded in
             # real prompt volume, not a fixed guess.
@@ -205,6 +213,7 @@ def _resolve(bundle: Path) -> dict:
     return {"profile": profile, "pbc_list": pbc_list, "mailbox": mailbox}
 
 
-def run_agent(bundle: str | Path, prefer_mock: bool = False, ceiling_usd: float = 5.0) -> TrackerState:
+def run_agent(bundle: str | Path, prefer_mock: bool = False, ceiling_usd: float = 5.0,
+              max_emails: int | None = None) -> TrackerState:
     return AgentRunner.from_bundle(bundle, ceiling_usd=ceiling_usd,
-                                   prefer_mock=prefer_mock).run()
+                                   prefer_mock=prefer_mock).run(max_emails=max_emails)
