@@ -102,9 +102,10 @@ class AgentRunner:
         attachments = [{"doc_id": d, "filename": self.toolbox.documents[d].filename,
                         "type": self.toolbox.documents[d].sniffed_type.value}
                        for d in leaf_ids]
+        from pbc_agent.tools_impl.pii import redact_text
         ctx = {"thread": thread_id, "subject": message.subject,
                "sender": str(message.sender) if message.sender else "",
-               "body": message.body_text[:1200], "attachments": attachments}
+               "body": redact_text(message.body_text[:1200]), "attachments": attachments}
 
         self.toolbox.set_email_context(message.subject, message.body_text)
         trace = EmailTrace(thread_id=thread_id, message_source=message.source_path,

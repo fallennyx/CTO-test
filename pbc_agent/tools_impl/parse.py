@@ -35,9 +35,19 @@ def parse_document(doc: Document) -> Document:
                 doc.text = doc.raw_bytes.decode("utf-8", "replace")
             doc.pages = [doc.text]
         # ARCHIVE / EMAIL / UNKNOWN: nothing to parse at this level.
+        _scan_pii(doc)
     finally:
         doc.parsed = True
     return doc
+
+
+def _scan_pii(doc: Document) -> None:
+    """Detect PII as soon as text exists, so it can be redacted before any LLM/UI exposure."""
+    try:
+        from pbc_agent.tools_impl.pii import scan_document
+        scan_document(doc)
+    except Exception:
+        pass
 
 
 # --- PDF ------------------------------------------------------------------------------

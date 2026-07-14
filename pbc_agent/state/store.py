@@ -83,6 +83,10 @@ class TrackerState:
                 "primary_evidence": a.primary_evidence,
                 "open_items": a.open_items,
                 "confidence": a.confidence,
+                "needs_review": a.needs_review,
+                "flags": a.flags,
+                "latest_version": a.latest_version,
+                "superseded": a.superseded,
                 "expected_by": self.items[iid].expected_by.isoformat()
                 if self.items[iid].expected_by else None,
                 "checks": [

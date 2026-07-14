@@ -31,9 +31,14 @@ class VersionGroup:
 
 
 def base_key(filename: str) -> str:
-    """A stable identity for a deliverable, independent of version/date decoration."""
+    """A stable identity for a deliverable, independent of *version* decoration.
+
+    Dates are deliberately KEPT: two differently-dated files (e.g. board minutes from
+    different meetings) are distinct deliverables, not versions of one — merging them would
+    hide evidence. Only explicit version markers (v1/v2/final/draft/…) are stripped, so a
+    ``Final_v3_REAL`` groups with its earlier ``v1``/``v2`` but never with a different date.
+    """
     stem = filename.rsplit(".", 1)[0]
-    stem = _DATE_TOKENS.sub(" ", stem)          # strip dates while separators intact
     stem = re.sub(r"[_\-]+", " ", stem)          # underscores are \w, so split first...
     stem = _VERSION_TOKENS.sub(" ", stem)        # ...then \b version-token removal works
     return _NONALNUM.sub("", stem.lower())

@@ -61,7 +61,11 @@ class ItemAssessment:
     open_items: list[str] = field(default_factory=list)
     confidence: float = 1.0
     latest_version: str | None = None
+    superseded: list[str] = field(default_factory=list)         # older versions, if any
     source_email: str | None = None
+    #: Loud "a human should look" signal: content conflicts, PII, or low confidence.
+    needs_review: bool = False
+    flags: list[str] = field(default_factory=list)              # anomaly / PII messages
 
     @property
     def open_count(self) -> int:

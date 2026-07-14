@@ -18,11 +18,11 @@ from pbc_agent.model.criteria import PBCItem
 from pbc_agent.model.documents import Document
 from pbc_agent.state.store import TrackerState
 from pbc_agent.tools_impl.draft import build_contacts, draft_followups
+from pbc_agent.tools_impl.assess import assess_item
 from pbc_agent.tools_impl.extract import extract_fields
 from pbc_agent.tools_impl.parse import parse_document
+from pbc_agent.tools_impl.pii import redact_text, summarize
 from pbc_agent.tools_impl.search import CandidateMatcher, evidence_query
-from pbc_agent.tools_impl.verify import verify_item
-from pbc_agent.tools_impl.version import group_versions
 
 _MONTHS = {m: i for i, m in enumerate(
     ["january", "february", "march", "april", "may", "june", "july", "august",
@@ -92,12 +92,14 @@ class Toolbox:
         if doc is None:
             return {"error": "no such document"}, "parse: no such doc"
         parse_document(doc)
+        pii = f", PII redacted ({summarize(doc.pii_findings)})" if doc.pii_findings else ""
         info = {"doc_id": doc.doc_id, "filename": doc.filename, "type": doc.sniffed_type.value,
                 "ocr_used": doc.ocr_used, "pages": len(doc.pages),
                 "sheets": [f"{s.name}{'/'+s.state if s.state!='visible' else ''}" for s in doc.sheets],
-                "excerpt": (doc.text or "")[:400]}
+                "pii_findings": summarize(doc.pii_findings) if doc.pii_findings else "",
+                "excerpt": redact_text((doc.text or "")[:400])}
         return info, f"parsed {doc.filename} ({doc.sniffed_type.value}" \
-                     + (", OCR" if doc.ocr_used else "") + ")"
+                     + (", OCR" if doc.ocr_used else "") + pii + ")"
 
     def _t_extract_fields(self, inp, _src):
         doc = self._doc(inp.get("doc_id", ""))
@@ -112,7 +114,8 @@ class Toolbox:
             summary[f.kind.value] = summary.get(f.kind.value, 0) + 1
         for f in fields[:8]:
             sample.append({"kind": f.kind.value, "value": str(f.value),
-                           "at": f.provenance.locator, "quote": f.provenance.snippet[:80]})
+                           "at": f.provenance.locator,
+                           "quote": redact_text(f.provenance.snippet[:80])})
         return {"doc_id": doc.doc_id, "counts": summary, "sample": sample}, \
                f"extracted {len(fields)} fields from {doc.filename}"
 
@@ -146,8 +149,7 @@ class Toolbox:
                 extract_fields(doc, self.eng)
         all_ids = self.state.add_evidence(item_id, doc_ids)
         docs = [self.documents[d] for d in all_ids if d in self.documents]
-        assessment = verify_item(item, docs, self.eng, source_email=source_email)
-        assessment.latest_version = self._latest_version(docs)
+        assessment = assess_item(item, docs, self.eng, source_email=source_email)
         self.state.set_assessment(assessment)
         checks = [{"criterion": c.criterion_kind, "outcome": c.outcome.value, "detail": c.detail}
                   for c in assessment.check_results]
@@ -174,12 +176,6 @@ class Toolbox:
 
     def _t_finish(self, inp, _src):
         return {"ok": True}, inp.get("summary", "done")
-
-    def _latest_version(self, docs) -> str | None:
-        groups = group_versions([(d.doc_id, d.filename, None) for d in docs])
-        labels = [g.version_label for g in groups if g.superseded]
-        return labels[0] if labels else None
-
 
 # --- schema + date helpers ------------------------------------------------------------
 

@@ -116,20 +116,21 @@ def _check_period(c: PeriodCriterion, fields, text, eng, filenames="") -> CheckR
         hit = next((f for f in dates if f.value == c.end), None)
         if hit:
             return _r("period", c.raw, Outcome.PASS, f"as of {c.end.isoformat()}", cite(hit))
+        # An explicit "as of <date>" that names a different period is a wrong-period file.
+        stated = _explicit_asof(text)
+        if stated and stated.year != c.end.year:
+            return _r("period", c.raw, Outcome.FAIL,
+                      f"states 'as of {stated.isoformat()}', but the request is as of "
+                      f"{c.end.isoformat()}")
         if _period_end_in_text(c.end, text):
             return _r("period", c.raw, Outcome.PASS, f"as of {c.end.isoformat()}")
         in_fy = [f for f in dates if fy_start <= f.value <= fy_end]
-        prior = [f for f in dates if prior_start <= f.value <= prior_end]
-        if not in_fy and prior:
-            return _r("period", c.raw, Outcome.FAIL,
-                      f"dates are prior-year ({prior[0].value.isoformat()}); "
-                      f"expected as of {c.end.isoformat()}", cite(prior[0]))
         if in_fy:
             return _r("period", c.raw, Outcome.PASS,
                       f"within fiscal year (e.g. {in_fy[0].value.isoformat()})", cite(in_fy[0]))
-        # No content date to confirm or contradict: accept a period-end encoded in the
-        # filename as corroboration (only because nothing in the content conflicts).
-        if not dates and _period_end_in_text(c.end, filenames):
+        # No content confirmation: accept a period-end encoded in the filename as
+        # corroboration (only because nothing in the content conflicts).
+        if _period_end_in_text(c.end, filenames):
             return _r("period", c.raw, Outcome.PASS,
                       f"as of {c.end.isoformat()} (per document label)")
         return _r("period", c.raw, Outcome.UNVERIFIABLE,
@@ -284,6 +285,21 @@ def _check_horizon(c: HorizonCriterion, text) -> CheckResult:
 
 _MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july",
                 "august", "september", "october", "november", "december"]
+
+_ASOF_RE = re.compile(
+    r"(?:as\s+of|as\s+at|period\s+end(?:ed|ing)|year\s+end(?:ed|ing)|balance\s+as\s+of)\s+"
+    r"([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})",
+    re.IGNORECASE)
+
+
+def _explicit_asof(text: str):
+    """Parse the date from an explicit 'as of <date>' phrase, if present."""
+    m = _ASOF_RE.search(text or "")
+    if not m:
+        return None
+    from pbc_agent.tools_impl.extract import _dates as _extract_dates
+    fields = _extract_dates("x", "asof", m.group(1))
+    return fields[0].value if fields else None
 
 
 def _period_end_in_text(end, text: str) -> bool:

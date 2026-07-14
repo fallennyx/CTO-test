@@ -40,23 +40,30 @@ Control flow is **agent-driven** (Claude decides per email what to do); the heav
 `verify_item(item_id, doc_ids[])` · `note_schedule(item_id, new_date)` · `draft_followups()` ·
 `finish(summary)`. Each returns compact JSON + a one-line trace summary.
 
-## Hallucination guardrails
+## Guardrails & robustness (catch unseen / adversarial data)
 
 - **Content over filenames** — type by magic bytes; `..._signed.pdf` with a DRAFT body is flagged.
-- **Citations required** — every extracted fact carries a page/sheet + verbatim snippet; the
-  verifier is **deterministic** (no free-text judgment), and reasoning is composed only from
-  passed/failed checks — no invented numbers.
+- **Citations required** — every fact carries a page/sheet + verbatim snippet; the verifier is
+  **deterministic** and reasoning is composed only from passed/failed checks — no invented numbers.
 - **Uncertainty ≠ done** — low-confidence OCR / unconfirmable criteria become `UNVERIFIABLE`,
   never a silent Complete.
+- **PII gate** — SSN/DOB/bank/account/card detected, **redacted before any LLM or UI exposure**,
+  and flagged (defends the un-redacted-payroll trap and any leak on unseen data).
+- **Conflict/anomaly → `needs_review`** — filename-vs-content mismatch (year/entity/signed),
+  wrong-period "as of" statements, and low confidence raise a loud human-review flag rather than a
+  confident wrong answer.
+- **Version supersession + lineage** — `Final_v3_REAL` wins over `v1/v2`; distinct-dated files
+  (e.g. different board minutes) are kept separate, never merged.
 - **temperature 0**, structured tool I/O, content-hash dedup (a re-sent file is one delivery).
 
 ## Eval strategy
 
 `python -m pbc_agent.eval.score` scores labeled cases on **status accuracy, insufficiency-
-detection precision/recall/F1, expected tool-call-sequence match, and cost**. A **trap
-simulator** (`tests/test_traps.py`) synthesizes the five adversarial classes (wrong period,
-wrong entity, missing-invoice, hidden Excel tab, misleading filename) and asserts each is
-downgraded. Deterministic unit tests cover parsing, versioning, and verify logic.
+detection precision/recall/F1, expected tool-call-sequence match, and cost**. A **generalization
+harness** (`eval/traps/generate.py` + `tests/test_generalization.py`) *randomly generates* dozens
+of unseen adversarial documents each run — wrong period, wrong entity, unsigned/draft, short
+sample, leaked PII, misleading filename — and asserts **100% are downgraded or flagged**
+(currently 60/60). Deterministic unit tests cover parsing, versioning, PII, and verify logic.
 
 *Current (offline mock provider, sample bundle):* status accuracy 10/13, insufficiency
 precision 1.0, tool-sequence match 1.0. Live native tool-use lifts matching further.

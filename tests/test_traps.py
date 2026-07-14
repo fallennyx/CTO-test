@@ -56,7 +56,7 @@ def test_trap_wrong_period():
                                  end=date(2026, 6, 30), start=date(2026, 6, 30)))
     a = verify_item(item, [doc], ENG)
     assert a.status is Status.INSUFFICIENT
-    assert "prior-year" in a.reasoning.lower()
+    assert "2025" in a.reasoning and "2026" in a.reasoning   # names the mismatch
 
 
 def test_trap_wrong_entity():
