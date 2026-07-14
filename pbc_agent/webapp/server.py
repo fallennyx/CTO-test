@@ -15,6 +15,9 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from pbc_agent.agent.loop import run_agent
+from pbc_agent.util.env import load_local_env
+
+load_local_env()   # so `uvicorn pbc_agent.webapp.server:app` also finds a local .env
 
 _STATIC = Path(__file__).parent / "static"
 

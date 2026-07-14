@@ -20,6 +20,8 @@ from pbc_agent.model.documents import SourceType
 
 
 def main(argv: list[str] | None = None) -> int:
+    from pbc_agent.util.env import load_local_env
+    load_local_env()   # pick up ANTHROPIC_API_KEY from a local .env if present
     parser = argparse.ArgumentParser(prog="pbc", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
