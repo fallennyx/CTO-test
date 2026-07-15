@@ -187,17 +187,22 @@ def _check_entity(c: EntityCriterion, fields, text="", eng=None) -> CheckResult:
         return _r("entity", c.raw, Outcome.PASS,
                   f"all {len(c.required)} entities present", list(found.values())[:3])
     if strict:
-        # Consolidated statements often name the parent "and Subsidiaries" rather than
-        # listing each sub. Accept that; but a doc missing the PARENT entirely (only a sub
-        # present) is the wrong-entity trap and must fail.
+        # Consolidated statements often name the parent "and Subsidiaries" rather than listing
+        # each sub. Accept that.
         parent = next((e.name for e in (eng.entities if eng else []) if e.role == "parent"), None)
         has_parent = parent in found if parent else False
         if has_parent and re.search(r"subsidiar|consolidat", text):
             return _r("entity", c.raw, Outcome.PASS,
                       "parent + consolidated subsidiaries referenced", list(found.values())[:2])
-        return _r("entity", c.raw, Outcome.FAIL,
-                  f"missing entity/entities: {', '.join(sorted(missing))}",
-                  list(found.values())[:2])
+        # Naming SOME entities but missing others is the wrong-entity red flag -> FAIL.
+        # Naming NONE (e.g. consolidated statements that don't repeat entity names) can't be
+        # confirmed from content -> UNVERIFIABLE (soft), not a hard failure.
+        if found:
+            return _r("entity", c.raw, Outcome.FAIL,
+                      f"missing entity/entities: {', '.join(sorted(missing))}",
+                      list(found.values())[:2])
+        return _r("entity", c.raw, Outcome.UNVERIFIABLE,
+                  "consolidated entities not explicitly named in the document")
     # scope 'all'/specific: coverage is across the document set, not per-document.
     if found:
         return _r("entity", c.raw, Outcome.PASS, "entity reference present",

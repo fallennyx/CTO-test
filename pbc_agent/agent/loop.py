@@ -11,6 +11,7 @@ the model (Anthropic native tool-use, or the offline mock) decides, the tools ac
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +30,28 @@ from pbc_agent.state.store import TrackerState
 def _is_config_doc(filename: str) -> bool:
     low = filename.lower()
     return "pbc_list" in low or "client_profile" in low or low == "(email body)"
+
+
+# Strong, unresolved open-item signals (NOT "to follow" — that resolves on later delivery).
+_CAVEAT_OPEN = ("still outstanding", "remains outstanding", "under investigation",
+                "still investigating", "still pending", "not counter-signed", "to be signed",
+                "awaiting", "yet to be", "resolution when done", "still chas",
+                "not yet been received", "not yet provided", "still need")
+_CAVEAT_RESOLVED = ("immaterial", "fully explained", "explained by", "resolved", "no exception")
+_PBC_RE = re.compile(r"pbc[-\s]?(\d{1,2})", re.IGNORECASE)
+
+
+def _sentences(text: str) -> list[str]:
+    import re as _re
+    return [s for s in _re.split(r"(?<=[.!?])\s+|\n", text or "") if s.strip()]
+
+
+def _explicit_pbc(sentence: str, items: dict) -> str | None:
+    m = _PBC_RE.search(sentence)
+    if not m:
+        return None
+    iid = f"PBC-{int(m.group(1)):02d}"
+    return iid if iid in items else None
 
 _MAX_STEPS = 8
 _CONTENT_LEAVES = {SourceType.PDF_NATIVE, SourceType.PDF_SCANNED, SourceType.XLSX,
@@ -105,9 +128,61 @@ class AgentRunner:
         # Deterministic completeness backstop: never let a delivered document go unassessed,
         # even if the agent finished an email without verifying it.
         self._completeness_sweep()
+        # Read the threads for "still outstanding / under investigation" caveats a senior would
+        # act on, and downgrade the affected items accordingly.
+        self._caveat_pass()
         # Final step: draft grouped follow-ups for everything still open.
         self._final_followups()
         return self.state
+
+    def _caveat_pass(self) -> None:
+        """Downgrade items an email flags as still open (a senior reads the thread, not just the file).
+
+        Only strong, unresolved open-item language counts — "still outstanding", "under
+        investigation", "to be signed", etc. — and explicitly-resolved/immaterial mentions are
+        ignored, as are "to follow" promises (those resolve when the file later arrives). Each
+        caveat is routed to its PBC item by an explicit PBC-NN reference or by matching the
+        sentence against items that already have evidence.
+        """
+        delivered = {iid for iid, ev in self.state.evidence_by_item.items() if ev}
+        if not delivered:
+            return
+        # Map each delivered document to the item(s) it is evidence for, so a caveat can be
+        # routed among only the items that thread actually touched.
+        doc_to_items: dict[str, set[str]] = {}
+        for iid, ev in self.state.evidence_by_item.items():
+            for d in ev:
+                doc_to_items.setdefault(d, set()).add(iid)
+
+        for thread in self.threads:
+            thread_docs: set[str] = set()
+            for m in thread.messages:
+                thread_docs |= set(self.leaf_docs_by_source.get(m.source_path, []))
+            thread_items = {i for d in thread_docs for i in doc_to_items.get(d, set())}
+            for m in thread.messages:
+                for sentence in _sentences(m.body_text):
+                    low = sentence.lower()
+                    if not any(p in low for p in _CAVEAT_OPEN):
+                        continue
+                    if any(n in low for n in _CAVEAT_RESOLVED):
+                        continue
+                    iid = _explicit_pbc(sentence, self.state.items)
+                    if iid is None and thread_items:
+                        cands = self.toolbox.matcher.match(sentence, top_k=1, restrict=thread_items)
+                        iid = cands[0][0] if cands else None
+                    if iid is None or iid not in delivered:
+                        continue
+                    self._flag_open(iid, sentence)
+
+    def _flag_open(self, iid: str, sentence: str) -> None:
+        a = self.state.assessments[iid]
+        note = f"per email: {sentence.strip()[:110]}"
+        if note not in a.open_items:
+            a.open_items.append(note)
+        if a.status in (Status.COMPLETE, Status.RECEIVED):
+            a.status = Status.UNDER_REVIEW
+            a.reasoning = (a.reasoning + " " if a.reasoning else "") + \
+                "Downgraded: the client flagged an outstanding item in this thread."
 
     def _completeness_sweep(self) -> None:
         """Assess any delivered content document not already assigned to an item.

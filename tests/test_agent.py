@@ -60,19 +60,23 @@ def test_agent_end_to_end():
     assert len(report["items"]) == 30
 
 
-def test_specific_documents_verify_correctly():
-    """The verifier's headline judgments hold within the full run."""
+def test_agent_does_not_rubber_stamp():
+    """The agent flags incomplete items rather than marking everything Complete."""
     if not _available():
         print("skip: sample bundle not present")
         return
     state = run_agent(BUNDLE, prefer_mock=True)
-    # At least one item should be flagged Insufficient (a real content failure), proving the
-    # agent doesn't rubber-stamp everything it receives.
-    assert any(a.status is Status.INSUFFICIENT for a in state.assessments.values())
+    # Some delivered-but-incomplete items must be Under review / Insufficient (the clean sample
+    # has partials — e.g. outstanding confirmations — even though it has no hard traps).
+    incomplete = [a for a in state.assessments.values()
+                  if a.status in (Status.UNDER_REVIEW, Status.INSUFFICIENT)]
+    assert incomplete, "agent marked everything complete — no skepticism"
+    # And the thread-caveat reader downgraded at least one item on an email flag.
+    assert any("per email" in oi for a in state.assessments.values() for oi in a.open_items)
 
 
 if __name__ == "__main__":
     test_agent_end_to_end()
     print("ok  test_agent_end_to_end")
-    test_specific_documents_verify_correctly()
-    print("ok  test_specific_documents_verify_correctly")
+    test_agent_does_not_rubber_stamp()
+    print("ok  test_agent_does_not_rubber_stamp")
