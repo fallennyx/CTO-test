@@ -125,9 +125,10 @@ class AgentRunner:
             if self.state.budget.exhausted:
                 break
             self._process_email(message)
-        # Deterministic completeness backstop: never let a delivered document go unassessed,
-        # even if the agent finished an email without verifying it.
-        self._completeness_sweep()
+        # Authoritative, deterministic reconciliation: assign every delivered document to the
+        # single item it best satisfies and re-verify — so the verdict is reproducible and free
+        # of cross-item contamination, whichever provider drove the planning.
+        self._reconcile()
         # Read the threads for "still outstanding / under investigation" caveats a senior would
         # act on, and downgrade the affected items accordingly.
         self._caveat_pass()
@@ -184,23 +185,28 @@ class AgentRunner:
             a.reasoning = (a.reasoning + " " if a.reasoning else "") + \
                 "Downgraded: the client flagged an outstanding item in this thread."
 
-    def _completeness_sweep(self) -> None:
-        """Assess any delivered content document not already assigned to an item.
+    def _reconcile(self) -> None:
+        """Deterministically assign each delivered document to its single best-matching item.
 
-        The agent drives per-email reasoning; this guarantees coverage. Only unassigned,
-        real attachment content is swept — the PBC list / client profile and email bodies are
-        skipped. Uses the same deterministic match + verify tools, tagged as a sweep in the trace.
+        Every real attachment goes to exactly one item (its top candidate), which eliminates the
+        cross-item contamination that a free-form agent assignment can introduce (e.g. a signed
+        legal letter bleeding onto the management-representation item). Email-body evidence the
+        agent already captured (e.g. a forwarded 401(k) confirmation) is preserved. Every item
+        with evidence is then re-verified, making the final status a reproducible function of the
+        evidence — identical whether Claude or the offline mock drove the planning.
         """
-        assigned = {d for ids in self.state.evidence_by_item.values() for d in ids}
-        swept = []
+        from pbc_agent.tools_impl.assess import assess_item
+        from pbc_agent.tools_impl.extract import extract_fields
+        from pbc_agent.tools_impl.parse import parse_document
+        from pbc_agent.tools_impl.search import evidence_query
+
+        authoritative: dict[str, list[str]] = {}
+        # 1) Each attachment -> its single best item.
         for doc in list(self.toolbox.documents.values()):
             if doc.sniffed_type not in _CONTENT_LEAVES or doc.sniffed_type is SourceType.EMAIL_BODY:
                 continue
-            if doc.doc_id in assigned or _is_config_doc(doc.filename):
+            if _is_config_doc(doc.filename):
                 continue
-            from pbc_agent.tools_impl.parse import parse_document
-            from pbc_agent.tools_impl.extract import extract_fields
-            from pbc_agent.tools_impl.search import evidence_query
             if not doc.parsed:
                 parse_document(doc)
             if not doc.extracted_fields:
@@ -208,23 +214,30 @@ class AgentRunner:
             standards = [str(f.value) for f in doc.extracted_fields if f.kind.value == "standard"]
             cands = self.toolbox.matcher.match(
                 evidence_query(doc.filename, doc.text, standards), top_k=1)
-            if not cands:
-                continue
-            iid = cands[0][0]
-            if self.state.assessments[iid].status is not Status.NOT_STARTED:
-                continue   # don't override an item the agent already judged
-            self.toolbox.dispatch("verify_item", {"item_id": iid, "doc_ids": [doc.doc_id]},
-                                  "(completeness sweep)")
-            swept.append((doc.filename, iid))
-        if swept:
-            trace = EmailTrace(thread_id="—", message_source="(completeness sweep)",
-                               subject="Deterministic backstop — assessed unhandled deliveries")
-            for fn, iid in swept:
-                trace.tool_calls.append(ToolCallRecord(
-                    "verify_item", {"item_id": iid}, f"{fn} → {iid} "
-                    f"({self.state.assessments[iid].status.value})", True))
-                trace.item_ids_touched.append(iid)
-            self.state.trace.email_traces.append(trace)
+            if cands:
+                authoritative.setdefault(cands[0][0], []).append(doc.doc_id)
+        # 2) Preserve email-body evidence the agent already attributed (not attachment-based).
+        for iid, ev in self.state.evidence_by_item.items():
+            for d in ev:
+                doc = self.toolbox.documents.get(d)
+                if doc and doc.sniffed_type is SourceType.EMAIL_BODY:
+                    authoritative.setdefault(iid, [])
+                    if d not in authoritative[iid]:
+                        authoritative[iid].append(d)
+        # 3) Rebuild evidence + re-verify. Items that lost all evidence revert to Not started
+        #    (their earlier assessment was based on contaminating/misassigned documents).
+        from pbc_agent.model.assessment import ItemAssessment
+        self.state.evidence_by_item = authoritative
+        for iid in self.state.items:
+            if iid not in authoritative:
+                self.state.set_assessment(ItemAssessment(item_id=iid, status=Status.NOT_STARTED,
+                                          reasoning="No matching evidence has been received yet."))
+        for iid, doc_ids in authoritative.items():
+            docs = [self.toolbox.documents[d] for d in doc_ids if d in self.toolbox.documents]
+            if docs and iid in self.state.items:
+                self.state.set_assessment(
+                    assess_item(self.state.items[iid], docs, self.toolbox.eng,
+                                source_email="(reconciled)"))
 
     def _messages_in_order(self):
         msgs = [m for t in self.threads for m in t.messages]
