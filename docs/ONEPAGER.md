@@ -65,8 +65,9 @@ of unseen adversarial documents each run — wrong period, wrong entity, unsigne
 sample, leaked PII, misleading filename — and asserts **100% are downgraded or flagged**
 (currently 60/60). Deterministic unit tests cover parsing, versioning, PII, and verify logic.
 
-*Current (offline mock provider, sample bundle):* status accuracy 10/13, insufficiency
-precision 1.0, tool-sequence match 1.0. Live native tool-use lifts matching further.
+*Current (offline mock provider, sample bundle):* status accuracy **13/13**, insufficiency
+precision/recall/F1 = 1.0, generalization **60/60** unseen traps. A thread caveat-reader and
+completeness backstop also run on the live path.
 
 ## Cost — how it's known
 
