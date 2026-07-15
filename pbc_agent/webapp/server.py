@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 
 from pbc_agent.agent.loop import run_agent
 from pbc_agent.util.env import load_local_env
@@ -26,6 +27,10 @@ app = FastAPI(title="PBC Tracker")
 
 def _bundle() -> str:
     return os.environ.get("PBC_BUNDLE", "data/sample_bundle")
+
+
+def _live() -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
 @lru_cache(maxsize=4)
@@ -54,6 +59,55 @@ def _payload(bundle: str) -> dict:
 @app.get("/api/report")
 def report() -> JSONResponse:
     return JSONResponse(_payload(_bundle()))
+
+
+@app.get("/api/status")
+def status() -> JSONResponse:
+    live = _live()
+    return JSONResponse({"provider": "live" if live else "mock", "live": live})
+
+
+class KeyIn(BaseModel):
+    key: str = ""
+
+
+@app.post("/api/key")
+def set_key(payload: KeyIn) -> JSONResponse:
+    """Hold a tester-supplied API key in process memory only (never written to disk).
+
+    The bespoke web app binds 127.0.0.1, so the key stays on the tester's machine. Setting a key
+    flips both the tracker and the live-test harness to real Claude; clearing it reverts to the
+    offline mock. The tracker payload cache is invalidated so the next load re-runs live.
+    """
+    key = (payload.key or "").strip()
+    if key:
+        os.environ["ANTHROPIC_API_KEY"] = key
+    else:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    _payload.cache_clear()
+    live = _live()
+    return JSONResponse({"provider": "live" if live else "mock", "live": live})
+
+
+class LiveTestIn(BaseModel):
+    n: int = 12
+    seed: int = 7
+    force_mock: bool = False
+
+
+@app.post("/api/livetest")
+def livetest(payload: LiveTestIn) -> JSONResponse:
+    """Generate fresh random adversarial traps and run each through the agent path.
+
+    Uses real Claude when a key has been supplied (else the offline mock). The verdict for each
+    trap is deterministic, so a correct live run catches every case — the "live == offline"
+    guarantee, exercised on never-before-seen data.
+    """
+    from pbc_agent.eval.live_harness import run_live_traps
+    n = max(1, min(60, int(payload.n)))
+    prefer_mock = bool(payload.force_mock) or not _live()
+    out = run_live_traps(n=n, seed=int(payload.seed), prefer_mock=prefer_mock)
+    return JSONResponse(out)
 
 
 @app.get("/", response_class=HTMLResponse)

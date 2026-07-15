@@ -108,6 +108,12 @@ scripts/smoke_live.sh                        # ~30s live confirmation (needs key
 
 ## Recent changes (newest first)
 
+- **Live random-test tab** in the web app: paste a key in the header (`POST /api/key`, held in
+  process memory only — never written to disk), then the **🧪 Live tests** tab generates fresh
+  randomized traps and runs each through the real agent path (`POST /api/livetest` →
+  `eval/live_harness.py`), reporting caught/total + per-case agent trace + grounded cost. Verdict
+  stays deterministic, so a correct live run catches every trap (the live==offline guarantee, on
+  unseen data). No key → offline mock.
 - Deterministic **reconciliation** → live == offline **13/13** (was: live varied 4–10/13 due to
   autonomous matching contamination).
 - **Thread caveat-reader** + principled entity/count logic → offline 13/13.

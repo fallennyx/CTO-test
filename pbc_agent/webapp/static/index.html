@@ -123,6 +123,40 @@
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#1f2430;color:#fff;
          padding:11px 18px;border-radius:10px;opacity:0;transition:.25s;z-index:9;font-weight:600}
   .toast.show{opacity:1;transform:translateX(-50%)}
+
+  /* API key widget (header) */
+  .keybox{display:flex;align-items:center;gap:6px}
+  .keybox input{width:210px;max-width:42vw;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);
+                color:#fff;border-radius:9px;padding:7px 10px;font-size:12.5px}
+  .keybox input::placeholder{color:rgba(255,255,255,.7)}
+
+  /* Live tests tab */
+  .ltbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
+         border-radius:14px;padding:14px 16px;margin:12px 0;box-shadow:var(--shadow)}
+  .ltbar label{font-size:12.5px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
+  .ltbar input{width:74px;border:1px solid var(--line);background:var(--bg);color:var(--ink);
+               border-radius:8px;padding:6px 9px;font-size:13px}
+  .lthint{color:var(--muted);font-size:12.5px;margin:2px 0 0}
+  .ltsum{display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);
+         border-radius:14px;padding:14px 16px;margin:12px 0;box-shadow:var(--shadow)}
+  .ltbig{font-size:26px;font-weight:800}
+  .ltok{color:var(--green)} .ltbad{color:var(--red)}
+  .ltmeta{color:var(--muted);font-size:12.5px}
+  .ltcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0;
+          box-shadow:var(--shadow)}
+  .ltrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ltverdict{font-weight:800;font-size:13px}
+  .ltclass{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--gray-bg);color:var(--gray);
+           padding:2px 8px;border-radius:6px}
+  .ltattack{color:var(--muted);font-size:13px;margin:6px 0 0}
+  .ltreason{font-size:13px;margin:6px 0 0}
+  .ltdocs{color:var(--muted);font-size:12px;margin-top:4px}
+  details.lttrace{margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:6px 10px;background:var(--bg)}
+  details.lttrace summary{cursor:pointer;font-weight:600;color:var(--muted);font-size:12.5px}
+  .lttrace .trc{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--gray);margin:4px 0 0}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);
+        border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
   .hidden{display:none}
 </style>
 </head>
@@ -135,6 +169,11 @@
       <div class="sub" id="sub">loading…</div>
     </div>
     <div class="spacer"></div>
+    <div class="keybox">
+      <input id="keyin" type="password" autocomplete="off" spellcheck="false"
+             placeholder="paste ANTHROPIC_API_KEY" onkeydown="if(event.key==='Enter')saveKey()">
+      <button class="themebtn" id="keybtn" onclick="saveKey()" title="Use this key (live)">🔑</button>
+    </div>
     <button class="themebtn" id="themebtn" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
     <div class="hpill" id="provider"></div>
     <div class="hpill" id="cost">$—</div>
@@ -150,6 +189,7 @@
   <div class="tabs">
     <div class="tab active" data-view="tracker" onclick="setView('tracker')">📋 Tracker</div>
     <div class="tab" data-view="followups" onclick="setView('followups')">✉️ Follow-ups <span id="fucount"></span></div>
+    <div class="tab" data-view="livetests" onclick="setView('livetests')">🧪 Live tests</div>
   </div>
 
   <div id="tracker">
@@ -157,6 +197,23 @@
     <div id="list"></div>
   </div>
   <div id="followups" class="hidden"></div>
+
+  <div id="livetests" class="hidden">
+    <div class="ltbar">
+      <label>Cases <input id="ltn" type="number" min="1" max="60" value="12"></label>
+      <label>Seed <input id="ltseed" type="number" value="7"></label>
+      <button class="btn s" onclick="randomSeed()" title="New random seed">🎲 Randomize</button>
+      <button class="btn p" id="ltrun" onclick="runLiveTests()">▶ Run</button>
+      <span id="ltstate" class="lthint"></span>
+    </div>
+    <p class="lthint">Generates fresh, never-before-seen adversarial documents (wrong period, wrong
+      entity, unsigned draft, short sample, leaked PII, misleading filename) and runs each through
+      the agent — parse → extract → match → verify → deterministic verdict. Paste a key above to run
+      it against <b>real Claude</b>; without one it uses the offline demo engine. A correct run
+      catches every trap.</p>
+    <div id="ltsummary"></div>
+    <div id="ltlist"></div>
+  </div>
 </div>
 
 <footer>
@@ -334,6 +391,82 @@ function setView(v){
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===v));
   document.getElementById("tracker").classList.toggle("hidden",v!=="tracker");
   document.getElementById("followups").classList.toggle("hidden",v!=="followups");
+  document.getElementById("livetests").classList.toggle("hidden",v!=="livetests");
+}
+
+function setProviderPill(live){
+  document.getElementById("provider").innerHTML =
+    `<small>engine</small> ${live?"Claude (live)":"offline demo"}`;
+}
+
+async function saveKey(){
+  const el=document.getElementById("keyin"), key=el.value.trim();
+  try{
+    const r=await fetch("/api/key",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({key})});
+    const j=await r.json();
+    setProviderPill(j.live);
+    el.value="";  // don't leave the secret sitting in the field
+    el.placeholder = j.live ? "key set ✓ — live" : "paste ANTHROPIC_API_KEY";
+    toast(j.live ? "🔑 Key set — running against real Claude" : "Key cleared — offline demo");
+  }catch(e){ toast("Could not set key"); }
+}
+
+function randomSeed(){
+  document.getElementById("ltseed").value = Math.floor(Math.random()*1e6);
+}
+
+async function runLiveTests(){
+  const n=Math.max(1,Math.min(60,parseInt(document.getElementById("ltn").value)||12));
+  const seed=parseInt(document.getElementById("ltseed").value)||0;
+  const btn=document.getElementById("ltrun"), state=document.getElementById("ltstate");
+  btn.disabled=true;
+  state.innerHTML=`<span class="spin"></span> running ${n} case(s)…`;
+  document.getElementById("ltsummary").innerHTML="";
+  document.getElementById("ltlist").innerHTML="";
+  try{
+    const r=await fetch("/api/livetest",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({n,seed})});
+    const out=await r.json();
+    renderLive(out);
+    setProviderPill(out.live);
+    state.textContent="";
+  }catch(e){ state.textContent="run failed: "+e; }
+  finally{ btn.disabled=false; }
+}
+
+function renderLive(out){
+  const sum=document.getElementById("ltsummary");
+  const ok=out.all_caught, cls=ok?"ltok":"ltbad";
+  sum.innerHTML=`<div class="ltsum">
+    <div class="ltbig ${cls}">${out.caught}/${out.ran}</div>
+    <div>
+      <div><b class="${cls}">${ok?"All traps caught ✓":(out.missed+" missed ✗")}</b></div>
+      <div class="ltmeta">${out.live?"real Claude":"offline demo"} · model ${out.model} ·
+        seed ${out.seed} · $${out.cost.usd.toFixed(4)} · ${out.cost.llm_calls} model calls</div>
+    </div></div>`;
+  const list=document.getElementById("ltlist"); list.innerHTML="";
+  out.results.forEach((res,i)=>{
+    const caught=res.caught;
+    const tools=(res.tools||[]).map(t=>`${t.ok?"✓":"✗"} ${t.name} → ${t.summary}`).join("<br>");
+    const err=res.llm_error?`<div class="ltmeta ltbad">live call error: ${res.llm_error}</div>`:"";
+    const flags=(res.flags||[]).map(f=>`<span class="ltclass">${f}</span>`).join(" ");
+    const d=document.createElement("div"); d.className="ltcard";
+    d.innerHTML=`<div class="ltrow">
+        <span class="ltverdict ${caught?'ltok':'ltbad'}">${caught?'✓ caught':'✗ MISSED'}</span>
+        <span class="ltclass">${res.name}</span>
+        <span class="pill s-${NS(res.status)}">${res.status}</span>
+        ${res.needs_review?'<span class="ltclass">⚠ needs review</span>':''}
+      </div>
+      <div class="ltattack">${res.attack}</div>
+      <div class="ltreason">${res.reasoning||''}</div>
+      ${flags?`<div style="margin-top:6px">${flags}</div>`:''}
+      <div class="ltdocs">documents: ${(res.documents||[]).join(", ")}</div>
+      ${err}
+      ${tools?`<details class="lttrace"><summary>agent trace — ${res.tools.length} tool call(s)</summary>
+        <div class="trc">${tools}</div></details>`:''}`;
+    list.appendChild(d);
+  });
 }
 let toastT;
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
