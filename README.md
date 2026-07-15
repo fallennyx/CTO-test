@@ -11,7 +11,10 @@ for whatever is still open.
 > entity, a ZIP that looks full but is short a few invoices, or a `..._signed.pdf` that was
 > never signed. This system is a **content-verifying skeptic**.
 
-📄 **[1-page design](docs/ONEPAGER.md)** · 🎬 **[demo script](docs/DEMO.md)**
+📄 **[1-page design](docs/ONEPAGER.md)** · 📊 **[measured results](docs/LIVE_RESULTS.md)** · 🎬 **[demo script](docs/DEMO.md)**
+
+**Results:** 13/13 status accuracy **both** offline and live (real Claude), insufficiency F1 = 1.0,
+**60/60** unseen adversarial traps caught, ~$0.19 per inbox.
 
 ## Highlights
 

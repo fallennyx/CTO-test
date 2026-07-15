@@ -65,9 +65,10 @@ of unseen adversarial documents each run — wrong period, wrong entity, unsigne
 sample, leaked PII, misleading filename — and asserts **100% are downgraded or flagged**
 (currently 60/60). Deterministic unit tests cover parsing, versioning, PII, and verify logic.
 
-*Current (offline mock provider, sample bundle):* status accuracy **13/13**, insufficiency
-precision/recall/F1 = 1.0, generalization **60/60** unseen traps. A thread caveat-reader and
-completeness backstop also run on the live path.
+*Measured (sample bundle):* status accuracy **13/13 both offline and live** (real Claude),
+insufficiency P/R/F1 = 1.0, generalization **60/60** unseen traps, ~$0.19/inbox live. Live equals
+offline because a deterministic reconciliation makes the verdict a reproducible function of the
+evidence. See [LIVE_RESULTS.md](LIVE_RESULTS.md).
 
 ## Cost — how it's known
 
