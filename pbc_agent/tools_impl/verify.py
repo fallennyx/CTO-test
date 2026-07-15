@@ -244,18 +244,31 @@ def _check_include(c: IncludeCriterion, text) -> CheckResult:
 
 
 def _check_count(c: CountCriterion, text, units) -> CheckResult:
-    required = c.sample_size or c.minimum
+    """Count completeness.
+
+    A ``minimum`` (e.g. top-10 customers) is a firm floor — falling short FAILs (partial). A
+    ``sample_size`` is a target where a smaller *representative* sample is acceptable — so it
+    only FAILs when the document itself **claims** more than are present (the false-completion
+    trap: a bundle labeled "30 invoices" that actually holds 22).
+    """
     claimed = _claimed_count(text, c.unit)
     if c.cover_all:
         return _r("count", c.raw, Outcome.PASS if units else Outcome.UNVERIFIABLE,
                   f"{units} {c.unit} present")
+    # False completion: the document advertises more units than it actually contains.
     if claimed and units and units < claimed:
         return _r("count", c.raw, Outcome.FAIL,
                   f"{units} {c.unit} present but {claimed} indicated — {claimed - units} missing")
-    if required and units:
-        ok = units >= required or claimed == units
-        return _r("count", c.raw, Outcome.PASS if ok else Outcome.UNVERIFIABLE,
-                  f"{units} {c.unit} present (target {required})")
+    if c.minimum is not None:
+        if not units:
+            return _r("count", c.raw, Outcome.UNVERIFIABLE, f"no {c.unit} counted")
+        if units < c.minimum:
+            return _r("count", c.raw, Outcome.FAIL,
+                      f"only {units} of the required {c.minimum} {c.unit}")
+        return _r("count", c.raw, Outcome.PASS, f"{units} {c.unit} (≥ {c.minimum})")
+    if c.sample_size is not None:
+        return _r("count", c.raw, Outcome.PASS if units else Outcome.UNVERIFIABLE,
+                  f"{units} {c.unit} sampled")
     return _r("count", c.raw, Outcome.PASS if units else Outcome.UNVERIFIABLE,
               f"{units} {c.unit} present")
 
