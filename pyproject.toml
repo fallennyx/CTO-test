@@ -15,6 +15,7 @@ dependencies = []
 parse = [
     "pdfplumber>=0.11",     # native PDF text + tables
     "pypdf>=4.0",           # PDF metadata / fallback
+    "pypdfium2>=4.0",       # rasterize scanned-PDF pages for OCR (no system deps)
     "openpyxl>=3.1",        # XLSX incl. hidden sheets, formulas + cached values
     "pillow>=10.0",         # JPG handling / deskew
     "pytesseract>=0.3",     # OCR (requires system tesseract)
@@ -29,9 +30,13 @@ model = [
 report = [
     "jinja2>=3.1",          # HTML reviewer dashboard
 ]
+streamlit = [
+    "streamlit>=1.30",      # optional lightweight alternative UI (`pbc ui`)
+]
 web = [
     "fastapi>=0.110",       # localhost web app backend
     "uvicorn>=0.29",        # ASGI server
+    "python-multipart>=0.0.9",  # audit-upload (multipart form handling)
 ]
 pii = [
     "presidio-analyzer>=2.2",

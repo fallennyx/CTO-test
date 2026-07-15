@@ -55,15 +55,16 @@ def _doc(text: str, filename: str, eng: Engagement,
     return d
 
 
-def _item(*criteria) -> PBCItem:
+def _item(description: str, *criteria) -> PBCItem:
     return PBCItem(id="PBC-XX", category="Test", priority=Priority.HIGH,
-                   description="generated trap item", criteria=list(criteria))
+                   description=description, criteria=list(criteria))
 
 
 def _wrong_period(rng: random.Random, eng: Engagement) -> TrapCase:
     prior = eng.fiscal_year_end.year - rng.randint(1, 3)
     doc = _doc(f"Consolidated balances as of June 30, {prior}.", f"TB_FY{eng.fiscal_year_end.year%100}.pdf", eng)
-    item = _item(PeriodCriterion(raw="as_of", kind=PeriodKind.AS_OF,
+    item = _item("Adjusted trial balance as of fiscal year-end, consolidated.",
+                 PeriodCriterion(raw="as_of", kind=PeriodKind.AS_OF,
                                  end=eng.fiscal_year_end, start=eng.fiscal_year_end))
     return TrapCase("wrong_period", item, [doc], lambda a: a.status is Status.INSUFFICIENT)
 
@@ -72,7 +73,8 @@ def _wrong_entity(rng: random.Random, eng: Engagement) -> TrapCase:
     only = rng.choice([e for e in eng.entities if e.role != "parent"])
     doc = _doc(f"Trial balance for {only.name} as of 2026-06-30.", "Consolidated_TB.xlsx", eng,
                SourceType.XLSX)
-    item = _item(EntityCriterion(raw="entity=consolidated", scope_word="consolidated",
+    item = _item("Consolidated trial balance across all entities.",
+                 EntityCriterion(raw="entity=consolidated", scope_word="consolidated",
                                  required=eng.entity_names))
     return TrapCase("wrong_entity", item, [doc], lambda a: a.status is Status.INSUFFICIENT)
 
@@ -80,7 +82,8 @@ def _wrong_entity(rng: random.Random, eng: Engagement) -> TrapCase:
 def _unsigned_draft(rng: random.Random, eng: Engagement) -> TrapCase:
     doc = _doc("Representation letter (DRAFT)\n/s/ [TO BE SIGNED]",
                rng.choice(["MgmtRep.pdf", "RepLetter_FINAL.pdf"]), eng)
-    item = _item(SignatureCriterion(raw="signed=True", signed=True))
+    item = _item("Signed management representation letter.",
+                 SignatureCriterion(raw="signed=True", signed=True))
     return TrapCase("unsigned_draft", item, [doc],
                     lambda a: a.status is Status.UNDER_REVIEW or a.needs_review)
 
@@ -88,17 +91,19 @@ def _unsigned_draft(rng: random.Random, eng: Engagement) -> TrapCase:
 def _short_count(rng: random.Random, eng: Engagement) -> TrapCase:
     required = rng.choice([20, 25, 30])
     present = rng.randint(5, required - 3)
-    docs = [_doc(f"Invoice {i} dated 2026-06-2{i%10}", f"inv_{i}.pdf", eng) for i in range(present)]
+    docs = [_doc(f"Invoice {i} dated 2026-06-2{i%10}", f"invoice_{i}.pdf", eng) for i in range(present)]
     docs[0].text += f"\nSample of {required} invoices enclosed."
-    item = _item(CountCriterion(raw="sample_size", sample_size=required, unit="invoices"))
+    item = _item("AP cutoff sample of invoices around year-end.",
+                 CountCriterion(raw="sample_size", sample_size=required, unit="invoices"))
     return TrapCase("short_count", item, docs, lambda a: a.status is Status.UNDER_REVIEW)
 
 
 def _pii_leak(rng: random.Random, eng: Engagement) -> TrapCase:
     ssn = f"{rng.randint(100,899)}-{rng.randint(10,99)}-{rng.randint(1000,9999)}"
-    doc = _doc(f"Payroll for FY2026. Employee SSN {ssn}. Wages reconcile to GL.",
+    doc = _doc(f"Payroll register for FY2026. Employee SSN {ssn}. Wages reconcile to GL.",
                "Payroll_Register_FY26.xlsx", eng, SourceType.XLSX)
-    item = _item(PeriodCriterion(raw="period=FY2026", kind=PeriodKind.FISCAL_YEAR))
+    item = _item("FY2026 payroll register reconciled to GL.",
+                 PeriodCriterion(raw="period=FY2026", kind=PeriodKind.FISCAL_YEAR))
     return TrapCase("pii_leak", item, [doc],
                     lambda a: a.needs_review and any("PII" in f for f in a.flags))
 
@@ -106,7 +111,8 @@ def _pii_leak(rng: random.Random, eng: Engagement) -> TrapCase:
 def _misleading_filename(rng: random.Random, eng: Engagement) -> TrapCase:
     doc = _doc("Engagement letter (DRAFT) — not for execution.",
                "Engagement_Letter_signed_FINAL.pdf", eng)
-    item = _item(SignatureCriterion(raw="signed=True", signed=True))
+    item = _item("Signed engagement letter.",
+                 SignatureCriterion(raw="signed=True", signed=True))
     return TrapCase("misleading_filename", item, [doc],
                     lambda a: a.needs_review or a.status in (Status.UNDER_REVIEW, Status.INSUFFICIENT))
 

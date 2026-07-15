@@ -130,6 +130,12 @@
                 color:#fff;border-radius:9px;padding:7px 10px;font-size:12.5px}
   .keybox input::placeholder{color:rgba(255,255,255,.7)}
 
+  /* Upload */
+  .dropzone{border:2px dashed var(--line);border-radius:16px;padding:44px 20px;text-align:center;
+            background:var(--card);box-shadow:var(--shadow);margin-top:10px;transition:border-color .15s,background .15s}
+  .dropzone.drag{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--card))}
+  .dzicon{font-size:40px}
+
   /* Live tests tab */
   .ltbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
          border-radius:14px;padding:14px 16px;margin:12px 0;box-shadow:var(--shadow)}
@@ -190,6 +196,22 @@
     <div class="tab active" data-view="tracker" onclick="setView('tracker')">📋 Tracker</div>
     <div class="tab" data-view="followups" onclick="setView('followups')">✉️ Follow-ups <span id="fucount"></span></div>
     <div class="tab" data-view="livetests" onclick="setView('livetests')">🧪 Live tests</div>
+    <div class="tab" data-view="upload" onclick="setView('upload')">📥 New audit</div>
+  </div>
+
+  <div id="upload" class="hidden">
+    <div class="dropzone" id="dropzone">
+      <div class="dzicon">📥</div>
+      <h3 style="margin:6px 0">Upload an audit to run</h3>
+      <p class="lthint">Drop a <b>.zip</b> of the audit bundle (or a <b>.mbox</b>) here, or choose a file.</p>
+      <input type="file" id="uploadfile" accept=".zip,.mbox,.eml" onchange="uploadAudit(this.files[0])" hidden>
+      <button class="btn p" onclick="document.getElementById('uploadfile').click()">Choose file…</button>
+      <p class="lthint" id="upstate"></p>
+      <p class="lthint" style="max-width:640px;margin:14px auto 0">The bundle should contain a
+        <b>PBC-list PDF</b>, a <b>client-profile PDF</b>, and the mailbox (an <code>emails/</code>
+        folder of <code>.eml</code> files, or a <code>.mbox</code>). Everything stays on your
+        machine — nothing is uploaded anywhere else.</p>
+    </div>
   </div>
 
   <div id="tracker">
@@ -230,7 +252,25 @@ const NS = s => (s||"").replace(/\s/g,"");   // status -> class-safe
 let DATA=null, filter="All";
 
 async function load(){
-  const r = await fetch("/api/report"); DATA = await r.json();
+  const r = await fetch("/api/report"); const d = await r.json();
+  if(d.empty){ showEmpty(d); return; }
+  renderReport(d);
+}
+
+function showEmpty(d){
+  document.getElementById("sub").textContent = "No audit loaded";
+  document.getElementById("provider").innerHTML =
+    `<small>engine</small> ${d.live?"Claude (live)":"offline demo"}`;
+  document.getElementById("cost").innerHTML = "";
+  document.getElementById("headline").textContent =
+    "Upload an audit to begin — or try the engine on the 🧪 Live tests tab.";
+  document.getElementById("statusbar").innerHTML=""; document.getElementById("legend").innerHTML="";
+  document.getElementById("fucount").textContent="";
+  setView("upload");
+}
+
+function renderReport(d){
+  DATA = d;
   const c = DATA.status_counts, total = Object.values(c).reduce((a,b)=>a+b,0);
   const done = c["Complete"]||0, need = (c["Under review"]||0)+(c["Insufficient"]||0);
   document.getElementById("sub").textContent =
@@ -389,10 +429,32 @@ function renderFollowups(){
 
 function setView(v){
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===v));
-  document.getElementById("tracker").classList.toggle("hidden",v!=="tracker");
-  document.getElementById("followups").classList.toggle("hidden",v!=="followups");
-  document.getElementById("livetests").classList.toggle("hidden",v!=="livetests");
+  ["tracker","followups","livetests","upload"].forEach(id=>
+    document.getElementById(id).classList.toggle("hidden",v!==id));
 }
+
+async function uploadAudit(file){
+  if(!file) return;
+  const st=document.getElementById("upstate");
+  st.textContent=`Uploading “${file.name}” and running the audit… (first live run can take a minute)`;
+  const fd=new FormData(); fd.append("file", file);
+  try{
+    const r=await fetch("/api/upload",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok || d.error){ st.textContent="⚠ "+(d.error||"upload failed"); return; }
+    st.textContent="";
+    renderReport(d); setView("tracker"); toast("Audit loaded ✓");
+  }catch(e){ st.textContent="⚠ "+e; }
+}
+
+(function initDropzone(){
+  const dz=document.getElementById("dropzone"); if(!dz) return;
+  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{
+    e.preventDefault(); dz.classList.add("drag");}));
+  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{
+    e.preventDefault(); dz.classList.remove("drag");}));
+  dz.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) uploadAudit(e.dataTransfer.files[0]); });
+})();
 
 function setProviderPill(live){
   document.getElementById("provider").innerHTML =

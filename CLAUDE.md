@@ -63,7 +63,7 @@ inbox → ingest + recursion → [agent loop: per-email plan → parse/OCR → e
 pip install -e '.[parse,llm,report,web,dev]'   # + system `tesseract` for OCR
 python -m pbc_agent.cli ingest --bundle data/sample_bundle [--show-chains]
 python -m pbc_agent.cli run   --bundle data/sample_bundle [--mock] [--max-emails N] [--trace]
-python -m pbc_agent.cli web   --bundle data/sample_bundle   # localhost:8000 (127.0.0.1 only)
+python -m pbc_agent.cli web                  # localhost:8000; upload an audit / run live tests in-UI
 python -m pbc_agent.cli eval  [--live]      # 13/13 offline and live
 python -m pbc_agent.cli bench [--live]      # cost + held-out projection
 scripts/smoke_live.sh                        # ~30s live confirmation (needs key)
@@ -108,6 +108,11 @@ scripts/smoke_live.sh                        # ~30s live confirmation (needs key
 
 ## Recent changes (newest first)
 
+- **Audit upload** in the web app: no data ships (client uploads their own). A fresh clone opens
+  to an "📥 New audit" screen; drop a `.zip` bundle or `.mbox` → `POST /api/upload` (safe extract
+  to a temp dir, `_resolve` validates, agent runs, tracker renders). `/api/report` returns
+  `{empty:true}` when no bundle is loaded so the app never crashes without data. `data/` stays
+  git-ignored. Needs `python-multipart` (in the `[web]` extra).
 - **Live random-test tab** in the web app: paste a key in the header (`POST /api/key`, held in
   process memory only — never written to disk), then the **🧪 Live tests** tab generates fresh
   randomized traps and runs each through the real agent path (`POST /api/livetest` →

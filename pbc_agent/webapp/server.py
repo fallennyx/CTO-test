@@ -7,15 +7,18 @@ single-page app. One command:  `python -m pbc_agent.cli web --bundle data/sample
 
 from __future__ import annotations
 
+import io
 import os
+import tempfile
+import zipfile
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from pbc_agent.agent.loop import run_agent
+from pbc_agent.agent.loop import _resolve, run_agent
 from pbc_agent.util.env import load_local_env
 
 load_local_env()   # so `uvicorn pbc_agent.webapp.server:app` also finds a local .env
@@ -24,9 +27,17 @@ _STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="PBC Tracker")
 
+# The bundle currently being viewed. Starts from --bundle / PBC_BUNDLE if that path exists,
+# and is replaced when a tester uploads their own audit. Localhost single-user, so a module
+# global is sufficient.
+_CURRENT: dict[str, str | None] = {"bundle": None}
 
-def _bundle() -> str:
-    return os.environ.get("PBC_BUNDLE", "data/sample_bundle")
+
+def _current_bundle() -> str | None:
+    if _CURRENT["bundle"]:
+        return _CURRENT["bundle"]
+    default = os.environ.get("PBC_BUNDLE", "data/sample_bundle")
+    return default if Path(default).exists() else None
 
 
 def _live() -> bool:
@@ -58,7 +69,58 @@ def _payload(bundle: str) -> dict:
 
 @app.get("/api/report")
 def report() -> JSONResponse:
-    return JSONResponse(_payload(_bundle()))
+    bundle = _current_bundle()
+    if not bundle:
+        return JSONResponse({"empty": True, "live": _live()})
+    try:
+        return JSONResponse(_payload(bundle))
+    except Exception as e:
+        return JSONResponse({"error": f"Could not run this audit: {e}", "empty": True},
+                            status_code=400)
+
+
+def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract a zip, refusing entries that escape the destination (zip-slip guard)."""
+    for member in zf.namelist():
+        target = (dest / member).resolve()
+        if not str(target).startswith(str(dest.resolve())):
+            raise ValueError(f"unsafe path in archive: {member}")
+    zf.extractall(dest)
+
+
+@app.post("/api/upload")
+async def upload(file: UploadFile = File(...)) -> JSONResponse:
+    """Upload an audit to run: a ``.zip`` of the bundle, or a ``.mbox`` mailbox.
+
+    The bundle must contain a PBC-list PDF, a client-profile PDF, and the mailbox (an ``emails/``
+    folder of ``.eml`` files or a ``.mbox``). Files are held in a temporary directory on the
+    tester's own machine only; nothing is uploaded anywhere else.
+    """
+    data = await file.read()
+    name = Path(file.filename or "upload.bin").name
+    up = Path(tempfile.mkdtemp(prefix="pbc_upload_"))
+    try:
+        if name.lower().endswith(".zip"):
+            _safe_extract(zipfile.ZipFile(io.BytesIO(data)), up)
+        else:
+            (up / name).write_bytes(data)
+    except (zipfile.BadZipFile, ValueError) as e:
+        return JSONResponse({"error": f"Could not read the upload: {e}"}, status_code=400)
+
+    try:
+        _resolve(up)   # confirms profile + PBC list + mailbox are present
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "That upload is missing pieces. Include a PBC-list PDF, a client-profile "
+                      "PDF, and the mailbox (an emails/ folder of .eml files, or a .mbox)."},
+            status_code=400)
+
+    _CURRENT["bundle"] = str(up)
+    _payload.cache_clear()
+    try:
+        return JSONResponse(_payload(str(up)))
+    except Exception as e:
+        return JSONResponse({"error": f"Could not run this audit: {e}"}, status_code=400)
 
 
 @app.get("/api/status")

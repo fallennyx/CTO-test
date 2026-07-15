@@ -40,37 +40,38 @@ for whatever is still open.
 - **Config-driven, zero hardcoding**: the PBC list PDF + client profile are the config; swap
   them at review and re-run.
 
-## Quickstart
-
-Phase-1 ingest needs no dependencies. For the full agent + UI:
+## Quickstart (run it locally in 2 commands)
 
 ```bash
 pip install -e '.[parse,llm,report,web,dev]'   # deps (also: system `tesseract` for OCR)
-
-# Run the agent over a mailbox -> tracker JSON (offline mock, no key needed)
-python -m pbc_agent.cli run --bundle data/sample_bundle --mock
-
-# Launch the bespoke localhost web app  ->  http://127.0.0.1:8000
-python -m pbc_agent.cli web --bundle data/sample_bundle
-# (or the lightweight Streamlit UI:  python -m pbc_agent.cli ui --bundle data/sample_bundle)
-
-# Score against labeled cases (accuracy / insufficiency-F1 / tool-sequence / cost)
-python -m pbc_agent.cli eval --bundle data/sample_bundle
-
-# Prove generalization: dozens of randomly-generated unseen traps, all caught
-python -m tests.test_generalization
-
-# Just enumerate a mailbox (recursion engine)
-python -m pbc_agent.cli ingest --bundle data/sample_bundle --show-chains
+python -m pbc_agent.cli web                     # → http://127.0.0.1:8000  (localhost only)
 ```
 
-Set `ANTHROPIC_API_KEY` to switch from the offline mock to **real native tool-use** — the loop
-code is identical. Confirm the live path in ~30 seconds (a few cents):
+Then in the browser:
+
+1. **📥 New audit** — drop in a `.zip` of your audit bundle (a **PBC-list PDF**, a
+   **client-profile PDF**, and the mailbox — an `emails/` folder of `.eml` files or a `.mbox`).
+   It runs entirely on your machine and shows the live tracker with a "Why?" trace + citations
+   for every request.
+2. **🧪 Live tests** — paste your `ANTHROPIC_API_KEY` (held in memory only, never written to
+   disk) and watch the engine catch fresh, randomly-generated adversarial documents in real time.
+   No key → the offline demo engine runs the same cases.
+
+No API key and no data are required to start — with a key the app uses **real Claude**; without
+one it uses a faithful offline engine. The tracker verdict is identical either way.
+
+### Command line (optional)
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-scripts/smoke_live.sh            # runs 3 emails live, prints the trace + measured cost
+python -m pbc_agent.cli eval [--live]     # score vs labeled cases — 13/13 offline and live
+python -m pbc_agent.cli bench [--live]    # measured cost + held-out projection
+python -m tests.test_generalization       # 60/60 randomly-generated unseen traps caught
+scripts/smoke_live.sh                      # ~30s live confirmation (needs a key)
+# run/ingest a bundle directly:  python -m pbc_agent.cli run --bundle <path> [--mock]
 ```
+
+`ANTHROPIC_API_KEY` (env or a local git-ignored `.env`) switches the whole system from the
+offline mock to real native tool-use — the loop code is identical.
 
 ## How it works
 

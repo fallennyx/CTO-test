@@ -84,8 +84,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_ui(args) -> int:
+    import shutil
     import subprocess
 
+    if shutil.which("streamlit") is None:
+        print("The Streamlit UI is optional and needs Streamlit installed:\n"
+              "    pip install streamlit\n"
+              "The primary UI is the bespoke web app — run:  python -m pbc_agent.cli web",
+              file=sys.stderr)
+        return 2
     app = Path(__file__).parent / "ui" / "app.py"
     cmd = ["streamlit", "run", str(app), "--server.port", str(args.port),
            "--", "--bundle", str(args.bundle)]
