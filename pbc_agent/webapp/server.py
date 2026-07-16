@@ -7,8 +7,10 @@ single-page app. One command:  `python -m pbc_agent.cli web --bundle data/sample
 
 from __future__ import annotations
 
+import atexit
 import io
 import os
+import shutil
 import tempfile
 import zipfile
 from functools import lru_cache
@@ -115,12 +117,30 @@ async def upload(file: UploadFile = File(...)) -> JSONResponse:
                       "PDF, and the mailbox (an emails/ folder of .eml files, or a .mbox)."},
             status_code=400)
 
+    _remember_upload(str(up))
     _CURRENT["bundle"] = str(up)
     _payload.cache_clear()
     try:
         return JSONResponse(_payload(str(up)))
     except Exception as e:
         return JSONResponse({"error": f"Could not run this audit: {e}"}, status_code=400)
+
+
+# Temp upload dirs — keep only the current one; clean the rest (and all on shutdown).
+_UPLOAD_DIRS: list[str] = []
+
+
+def _remember_upload(path: str) -> None:
+    _UPLOAD_DIRS.append(path)
+    for old in _UPLOAD_DIRS[:-1]:
+        shutil.rmtree(old, ignore_errors=True)
+    _UPLOAD_DIRS[:] = _UPLOAD_DIRS[-1:]
+
+
+@atexit.register
+def _cleanup_uploads() -> None:
+    for d in _UPLOAD_DIRS:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 @app.get("/api/status")

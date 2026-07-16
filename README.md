@@ -76,47 +76,59 @@ offline mock to real native tool-use — the loop code is identical.
 ## How it works
 
 ```
-inbox → ingest+recursion → [agent loop: plan → parse → extract → match → verify → draft]
-      → tracker state + trace → Streamlit UI + report.json
+inbox → ingest+recursion → [agent loop: per-email plan → parse/OCR → extract → match → verify]
+      → deterministic reconciliation (authoritative evidence→item→status)
+      → thread caveat pass → follow-up drafting → tracker state + trace → web UI / report.json
 ```
 
-The agent (Claude, native tool use) decides *what to do per email*; the tools (deterministic)
-*do it*. See the [1-page design](docs/ONEPAGER.md) for the diagram, model-per-step, tool
-schemas, guardrails, eval, cost, and 10/100-concurrent scaling notes.
+The agent (Claude, native tool use) decides *what to do per email*; the deterministic tools *do
+it*; and a **deterministic reconciliation settles the verdict**, so status is reproducible
+(live == offline). See the [1-page design](docs/ONEPAGER.md) for the diagram, model-per-step,
+tool schemas, guardrails, eval, cost, and scaling notes.
+
+## For reviewers — where to look
+
+Want to see how it's built? Start here (also summarized in [`CLAUDE.md`](CLAUDE.md)):
+
+| To understand… | Read |
+|---|---|
+| **The agent loop** (per-email planning, one file) | `pbc_agent/agent/loop.py` — `AgentRunner.run()`, `SYSTEM_PROMPT` |
+| The tools the model calls (schemas + dispatch) | `pbc_agent/agent/tools.py` |
+| **The verifier** (where status is decided) | `pbc_agent/tools_impl/verify.py` |
+| Why status is reproducible (the audit backbone) | `loop._reconcile()` |
+| Reading the thread for "still outstanding" caveats | `loop._caveat_pass()` |
+| Cheap document→item matching | `pbc_agent/tools_impl/search.py` |
+| Recursion into nested ZIPs / `.eml`-in-`.eml` | `pbc_agent/ingest/extract.py` |
+| The web app (upload, tracker, live tests) | `pbc_agent/webapp/server.py` + `static/index.html` |
+| Proof it catches unseen data | `pbc_agent/eval/traps/generate.py` + `tests/test_generalization.py` |
 
 ## Layout
 
 ```
 pbc_agent/
-  agent/       loop.py (the tool-use loop) · tools.py · router.py · trace.py
-  tools_impl/  parse · extract · search · verify · version · draft   (deterministic tools)
+  agent/       loop.py (the tool-use loop + reconcile + caveat pass) · tools.py · router.py · trace.py
+  tools_impl/  parse · extract · search · verify · assess · version · pii · anomaly · draft
   ingest/      mailbox · threading · extract (recursion engine)
-  criteria_loader/ · config/ · model/ · state/ · llm/ · eval/ · ui/
-tests/         recursion · tools · traps · agent · bundle smoke
-docs/          ONEPAGER.md · DEMO.md
+  webapp/      server.py (FastAPI) · static/index.html (bespoke SPA: upload · tracker · live tests)
+  criteria_loader/ · config/ · model/ · state/ · llm/ · eval/(score · bench · live_harness · traps) · ui/
+tests/         recursion · tools · traps · generalization · agent · bundle smoke
+docs/          ONEPAGER.md · LIVE_RESULTS.md · DEMO.md · BEYOND_MVP.md
 ```
 
 ## Tests
 
 ```bash
-python -m tests.test_recursion    # recursion engine (self-contained)
-python -m tests.test_tools        # extract / verify / version / search
-python -m tests.test_traps        # adversarial trap simulator
-python -m tests.test_agent        # end-to-end agent (offline)
+python -m tests.test_recursion        # recursion engine (self-contained)
+python -m tests.test_tools            # extract / verify / version / search
+python -m tests.test_traps            # adversarial trap simulator
+python -m tests.test_generalization   # 60/60 randomly-generated unseen traps caught
+python -m tests.test_agent            # end-to-end agent (offline)
 # or `pytest`
 ```
 
-## Data
+## Data & privacy
 
-Sample/engagement data is client IP and is **git-ignored** (`data/`). Place a bundle at
-`data/sample_bundle/` (Client_Profile.pdf, PBC_List*.pdf, and an `emails/` dir or `.mbox`).
-
-## Status
-
-| Phase | Scope | State |
-|---|---|---|
-| 1. Ingest + recursion | mailbox/threading, nested ZIP + `.eml`-in-`.eml`, config parsers | ✅ |
-| 2. Tools | PDF/OCR/XLSX parse, cited extraction, matching, verifier, versioning, drafting | ✅ |
-| 3. Agent loop | native tool-use, per-email planning, cost router, trace, state, `pbc run` | ✅ |
-| 4. UI + evals + docs | Streamlit UI, eval harness, trap simulator, 1-pager, demo script | ✅ |
-| Stretch | multitenancy (per-engagement state isolation) | ◻︎ noted in one-pager |
+**No audit data ships with this repo** — you upload your own in the app (📥 New audit), and it's
+processed in a temporary folder on your machine and never sent anywhere. An `ANTHROPIC_API_KEY`,
+if provided, is held in memory only (never written to disk); the app binds `127.0.0.1` (localhost)
+only. Any `data/` and `.env` you create locally are git-ignored.
