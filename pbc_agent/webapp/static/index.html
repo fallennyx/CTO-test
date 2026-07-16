@@ -266,6 +266,7 @@ function showEmpty(d){
     "Upload an audit to begin — or try the engine on the 🧪 Live tests tab.";
   document.getElementById("statusbar").innerHTML=""; document.getElementById("legend").innerHTML="";
   document.getElementById("fucount").textContent="";
+  document.getElementById("upstate").textContent = d.error ? "⚠ " + d.error : "";
   setView("upload");
 }
 
@@ -326,8 +327,7 @@ const STATUSES=["All","Complete","Received","Under review","Insufficient","Not s
 function renderChips(){
   const el=document.getElementById("chips"); el.innerHTML="";
   STATUSES.forEach(s=>{
-    const n = s==="All" ? 30 : (DATA.status_counts[s]||0);
-    const d = document.getElementById; // noop
+    const n = s==="All" ? Object.keys(DATA.items).length : (DATA.status_counts[s]||0);
     const chip=document.createElement("div");
     chip.className="chip"+(filter===s?" active":"");
     chip.innerHTML = (s==="All"?"":`<span class="dot d-${NS(s)}"></span>`)+

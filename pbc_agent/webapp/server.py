@@ -83,9 +83,10 @@ def report() -> JSONResponse:
 
 def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
     """Extract a zip, refusing entries that escape the destination (zip-slip guard)."""
+    root = dest.resolve()
     for member in zf.namelist():
         target = (dest / member).resolve()
-        if not str(target).startswith(str(dest.resolve())):
+        if target != root and root not in target.parents:
             raise ValueError(f"unsafe path in archive: {member}")
     zf.extractall(dest)
 
@@ -117,13 +118,16 @@ async def upload(file: UploadFile = File(...)) -> JSONResponse:
                       "PDF, and the mailbox (an emails/ folder of .eml files, or a .mbox)."},
             status_code=400)
 
+    # Run the audit BEFORE repointing the app at it, so a bundle that passes _resolve but fails
+    # to actually run (e.g. a corrupt PDF) doesn't drop the previously-loaded good audit.
+    try:
+        payload = _payload(str(up))
+    except Exception as e:
+        shutil.rmtree(up, ignore_errors=True)
+        return JSONResponse({"error": f"Could not run this audit: {e}"}, status_code=400)
     _remember_upload(str(up))
     _CURRENT["bundle"] = str(up)
-    _payload.cache_clear()
-    try:
-        return JSONResponse(_payload(str(up)))
-    except Exception as e:
-        return JSONResponse({"error": f"Could not run this audit: {e}"}, status_code=400)
+    return JSONResponse(payload)
 
 
 # Temp upload dirs — keep only the current one; clean the rest (and all on shutdown).

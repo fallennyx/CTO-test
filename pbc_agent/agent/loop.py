@@ -56,6 +56,9 @@ def _explicit_pbc(sentence: str, items: dict) -> str | None:
 _MAX_STEPS = 8
 _CONTENT_LEAVES = {SourceType.PDF_NATIVE, SourceType.PDF_SCANNED, SourceType.XLSX,
                    SourceType.IMAGE, SourceType.EMAIL_BODY, SourceType.TEXT}
+#: Minimum BM25 score for reconciliation to assign a document to an item (filters incidental
+#: token overlaps). Real deliverables score well above this; stray docs are left unassigned.
+_RECONCILE_MIN_SCORE = 1.5
 
 SYSTEM_PROMPT = """You are an audit associate maintaining a live PBC (prepared-by-client) \
 request tracker for a financial-statement audit. For each incoming email you must decide what \
@@ -214,7 +217,10 @@ class AgentRunner:
             standards = [str(f.value) for f in doc.extracted_fields if f.kind.value == "standard"]
             cands = self.toolbox.matcher.match(
                 evidence_query(doc.filename, doc.text, standards), top_k=1)
-            if cands:
+            # Require a real match, not an incidental token overlap — a stray document that
+            # matches no item well is left unassigned (its items stay Not started) rather than
+            # manufacturing evidence for whatever it grazes.
+            if cands and cands[0][1] >= _RECONCILE_MIN_SCORE:
                 authoritative.setdefault(cands[0][0], []).append(doc.doc_id)
         # 2) Preserve email-body evidence the agent already attributed (not attachment-based).
         for iid, ev in self.state.evidence_by_item.items():
