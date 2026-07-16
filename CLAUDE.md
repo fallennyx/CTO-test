@@ -108,6 +108,13 @@ scripts/smoke_live.sh                        # ~30s live confirmation (needs key
 
 ## Recent changes (newest first)
 
+- **Hosted deploy** (`Dockerfile` + `render.yaml` + `docs/DEPLOY.md`): container image (py3.11 +
+  tesseract, `$PORT`/0.0.0.0). **Hosted mode** (`PBC_HOSTED=1`) = server holds the key for all
+  visitors: the in-browser key box is hidden and `POST /api/key` returns 403. A cumulative
+  **spend cap** (`PBC_MAX_SPEND_USD`) meters every run via `_record_spend()` and `_use_live()`
+  degrades to the offline mock once crossed (still 13/13). `/healthz` liveness probe; 80 MB upload
+  cap. All server-side in `webapp/server.py` (`_hosted`/`_spend_cap`/`_use_live`/`_record_spend`);
+  frontend hides `#keybox` on the `hosted` flag from `/api/report`. Localhost dev unchanged.
 - **Audit upload** in the web app: no data ships (client uploads their own). A fresh clone opens
   to an "📥 New audit" screen; drop a `.zip` bundle or `.mbox` → `POST /api/upload` (safe extract
   to a temp dir, `_resolve` validates, agent runs, tracker renders). `/api/report` returns

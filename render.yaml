@@ -1,0 +1,16 @@
+# Render blueprint — one-click deploy of the PBC Tracker web app.
+# In Render: New → Blueprint → connect this repo. Then set ANTHROPIC_API_KEY in the dashboard.
+services:
+  - type: web
+    name: pbc-tracker
+    runtime: docker
+    plan: free                # bump to "starter" for faster cold starts / more RAM
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: ANTHROPIC_API_KEY # the $50 demo key — set this in the Render dashboard (not in git)
+        sync: false
+      - key: PBC_HOSTED
+        value: "1"            # server-held key for all visitors; in-browser key box disabled
+      - key: PBC_MAX_SPEND_USD
+        value: "45"           # hard cumulative spend cap; degrades to the offline engine past it

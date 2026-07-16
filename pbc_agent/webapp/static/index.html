@@ -175,7 +175,7 @@
       <div class="sub" id="sub">loading…</div>
     </div>
     <div class="spacer"></div>
-    <div class="keybox">
+    <div class="keybox" id="keybox">
       <input id="keyin" type="password" autocomplete="off" spellcheck="false"
              placeholder="paste ANTHROPIC_API_KEY" onkeydown="if(event.key==='Enter')saveKey()">
       <button class="themebtn" id="keybtn" onclick="saveKey()" title="Use this key (live)">🔑</button>
@@ -253,8 +253,16 @@ let DATA=null, filter="All";
 
 async function load(){
   const r = await fetch("/api/report"); const d = await r.json();
+  applyHosted(d.hosted);
   if(d.empty){ showEmpty(d); return; }
   renderReport(d);
+}
+
+// On the deployed demo the server holds its own key (with a spend cap), so the in-browser
+// key box is hidden — a public visitor can't replace or clear it.
+function applyHosted(hosted){
+  const box = document.getElementById("keybox");
+  if(box) box.style.display = hosted ? "none" : "";
 }
 
 function showEmpty(d){

@@ -73,6 +73,12 @@ scripts/smoke_live.sh                      # ~30s live confirmation (needs a key
 `ANTHROPIC_API_KEY` (env or a local git-ignored `.env`) switches the whole system from the
 offline mock to real native tool-use — the loop code is identical.
 
+### Hosted demo (optional)
+
+Ships as a container (`Dockerfile` + `render.yaml`) for a one-click **Render** deploy: the server
+holds one API key, everyone with the link runs on real Claude, and a cumulative spend cap degrades
+to the offline engine once the budget is spent. See **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
+
 ## How it works
 
 ```

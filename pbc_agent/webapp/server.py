@@ -46,10 +46,40 @@ def _live() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
+# --- hosted mode + global spend cap (protects a server-held API budget) ---------------
+_SPENT: dict[str, float] = {"usd": 0.0}
+_MAX_UPLOAD_BYTES = 80 * 1024 * 1024   # reject uploads larger than 80 MB
+
+
+def _hosted() -> bool:
+    """Deployed/multi-user mode: the server holds the key; the in-browser override is off."""
+    return os.environ.get("PBC_HOSTED", "").strip() in {"1", "true", "yes"}
+
+
+def _spend_cap() -> float:
+    try:
+        return float(os.environ.get("PBC_MAX_SPEND_USD", "0") or 0)
+    except ValueError:
+        return 0.0
+
+
+def _use_live() -> bool:
+    """Live only if a key is present AND we're under the cumulative spend cap (if one is set)."""
+    if not _live():
+        return False
+    cap = _spend_cap()
+    return cap <= 0 or _SPENT["usd"] < cap
+
+
+def _record_spend(usd: float) -> None:
+    _SPENT["usd"] = round(_SPENT["usd"] + float(usd or 0), 4)
+
+
 @lru_cache(maxsize=4)
 def _payload(bundle: str) -> dict:
-    prefer_mock = not os.environ.get("ANTHROPIC_API_KEY")
+    prefer_mock = not _use_live()
     state = run_agent(bundle, prefer_mock=prefer_mock)
+    _record_spend(state.budget.summary()["usd"])
     report = state.to_report()
 
     # attach per-item agent traces (plan + tool calls) for the "Audit detail" panel
@@ -66,6 +96,8 @@ def _payload(bundle: str) -> dict:
     report["provider"] = "live" if not prefer_mock else "mock"
     report["categories"] = {iid: state.items[iid].category for iid in state.items}
     report["descriptions"] = {iid: state.items[iid].description for iid in state.items}
+    report["hosted"] = _hosted()
+    report["spend"] = {"usd": round(_SPENT["usd"], 4), "cap": _spend_cap()}
     return report
 
 
@@ -73,11 +105,12 @@ def _payload(bundle: str) -> dict:
 def report() -> JSONResponse:
     bundle = _current_bundle()
     if not bundle:
-        return JSONResponse({"empty": True, "live": _live()})
+        return JSONResponse({"empty": True, "live": _use_live(), "hosted": _hosted()})
     try:
         return JSONResponse(_payload(bundle))
     except Exception as e:
-        return JSONResponse({"error": f"Could not run this audit: {e}", "empty": True},
+        return JSONResponse({"error": f"Could not run this audit: {e}", "empty": True,
+                             "hosted": _hosted()},
                             status_code=400)
 
 
@@ -100,6 +133,11 @@ async def upload(file: UploadFile = File(...)) -> JSONResponse:
     tester's own machine only; nothing is uploaded anywhere else.
     """
     data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        return JSONResponse(
+            {"error": f"That upload is {len(data) // (1024*1024)} MB; the limit is "
+                      f"{_MAX_UPLOAD_BYTES // (1024*1024)} MB."},
+            status_code=413)
     name = Path(file.filename or "upload.bin").name
     up = Path(tempfile.mkdtemp(prefix="pbc_upload_"))
     try:
@@ -147,10 +185,18 @@ def _cleanup_uploads() -> None:
         shutil.rmtree(d, ignore_errors=True)
 
 
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Liveness probe for the container host (Render healthCheckPath)."""
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/status")
 def status() -> JSONResponse:
-    live = _live()
-    return JSONResponse({"provider": "live" if live else "mock", "live": live})
+    live = _use_live()
+    return JSONResponse({"provider": "live" if live else "mock", "live": live,
+                         "hosted": _hosted(),
+                         "spend": {"usd": round(_SPENT["usd"], 4), "cap": _spend_cap()}})
 
 
 class KeyIn(BaseModel):
@@ -164,7 +210,14 @@ def set_key(payload: KeyIn) -> JSONResponse:
     The bespoke web app binds 127.0.0.1, so the key stays on the tester's machine. Setting a key
     flips both the tracker and the live-test harness to real Claude; clearing it reverts to the
     offline mock. The tracker payload cache is invalidated so the next load re-runs live.
+
+    Disabled in hosted mode: the deployed server holds its own key (with a spend cap), and a public
+    visitor must not be able to replace or clear it.
     """
+    if _hosted():
+        return JSONResponse(
+            {"error": "Key entry is disabled on the hosted demo; it runs on the server's key.",
+             "hosted": True}, status_code=403)
     key = (payload.key or "").strip()
     if key:
         os.environ["ANTHROPIC_API_KEY"] = key
@@ -191,8 +244,12 @@ def livetest(payload: LiveTestIn) -> JSONResponse:
     """
     from pbc_agent.eval.live_harness import run_live_traps
     n = max(1, min(60, int(payload.n)))
-    prefer_mock = bool(payload.force_mock) or not _live()
+    prefer_mock = bool(payload.force_mock) or not _use_live()
     out = run_live_traps(n=n, seed=int(payload.seed), prefer_mock=prefer_mock)
+    try:
+        _record_spend((out.get("cost") or {}).get("usd") or out.get("usd") or 0)
+    except AttributeError:
+        pass
     return JSONResponse(out)
 
 
